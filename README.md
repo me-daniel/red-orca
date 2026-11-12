@@ -1,10 +1,12 @@
 # Red Orca Pod
 
 <p align="center">
-  <img src="assets/banner.svg" alt="Red Orca Pod — an open-weights cyber agent for red teams" width="100%">
+  <img src="assets/banner.svg" alt="Red Orca Pod: an open-weights cyber agent for red teams" width="100%">
 </p>
 
-**An open, model-agnostic cyber agent for red teams — built so you don't need access to Mythos or any other closed cyber model to defend against the threats that use them.**
+**Red-team Enabled Deployment of Orchestrated Reasoning across Cybersecurity Agents for Penetration Operations & Discovery**
+
+RED ORCA POD is an open, model-agnostic cybersecurity solution built for you and anyone without Mythos access.
 
 ---
 
@@ -12,13 +14,13 @@
 
 The strongest cyber-capable models are closed. Access to systems like Mythos is gated behind contracts, budgets, and approval processes that most defenders, researchers, small security teams, and independent red teams will never clear. Meanwhile, the same class of capability is being assembled by attackers from whatever they can reach: a closed frontier model for planning, an open-weights model for payload work, another for analysis, a third for persistence and evasion.
 
-The result is an asymmetry that has nothing to do with skill. A defender with deep expertise and no model access is outgunned by an attacker with shallow expertise and a credit card.
+The result is an asymmetry that has nothing to do with skill. A defender with deep expertise and no model access is outgunned by an attacker with shallow expertise and a credit card. With the sharp fall of model prices, even small organisations are worth hacking now, and they often lack the needed defense mechanisms.
 
-That asymmetry is the thing this project exists to break.
+That asymmetry is what this project wants to break.
 
 ## The idea
 
-**The Red Orca Pod** combines many models — open weights and closed source — into a single cyber agent that is stronger than any one of its parts.
+**The Red Orca Pod** combines open-weights and closed-source models into a single cyber agent that is stronger than any one of its parts.
 
 Orcas don't hunt alone. A pod coordinates: one drives, others flank, another calls, and the group takes down prey far larger than any individual. This project applies the same principle to models. Instead of betting everything on one vendor's cyber model, the Pod routes each task to the model that is actually best at it, runs independent models in parallel, cross-checks their output, and synthesizes a single result.
 
@@ -66,11 +68,11 @@ Ensembles, routing, and verification are not new ideas. Applying them deliberate
                     └─────────────────────┘
 ```
 
-1. **Plan** — the orchestrator decomposes the objective into subtasks and assigns each one a capability profile, not a model name.
-2. **Route** — a routing layer maps capability profiles to whatever models are configured: local, remote, open weights, closed, cheap, expensive.
-3. **Run the pod** — multiple models can work the same subtask in parallel, especially where being wrong is expensive.
-4. **Verify** — a separate model (ideally from a different family) reviews output for correctness, hallucination, and unsafe assumptions.
-5. **Synthesize** — results are merged into one coherent product: a finding, a report, a detection, a fix.
+1. **Plan:** The orchestrator decomposes the objective into subtasks and assigns each one a capability profile, not a model name.
+2. **Route:** A routing layer maps capability profiles to whatever models are configured: local, remote, open weights, closed, cheap, expensive.
+3. **Run the pod:** Multiple models can work the same subtask in parallel, especially where being wrong is expensive.
+4. **Verify:** A separate model (ideally from a different family) reviews output for correctness, hallucination, and unsafe assumptions.
+5. **Synthesize:** Results are merged into one coherent product: a finding, a report, a detection, a fix.
 
 Because routing is by capability and not by vendor, swapping in a new open-weights model is a config change, not a rewrite. A new closed model is just another optional endpoint.
 
@@ -166,7 +168,7 @@ The goal is to close a capability gap for defenders, not to hand attackers a bet
 
 ## Contributing
 
-Contributions are welcome: new model adapters, routing strategies, verification prompts, workflows, and evaluations. Please keep the open-weights-only path working — a change that makes a closed model mandatory will not be merged.
+Contributions are welcome: new model adapters, routing strategies, verification prompts, workflows, and evaluations. Please keep the open-weights-only path working. A change that makes a closed model mandatory will not be merged.
 
 ## License
 
