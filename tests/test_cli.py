@@ -32,10 +32,16 @@ def test_opencode_config_and_skills():
         assert len(lock["upstreams"][name]["commit"]) == 40
 
 
-def _run(*args):
+def _run(*args: str, env_overrides: dict[str, str] | None = None):
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT / "src")
     env["VSW_ROOT"] = str(ROOT)
+    env["VSW_NO_DOTENV"] = "1"
+    # Provider keys must not turn CLI tests into live calls.
+    for name in ("OPENCODE_API_KEY", "OPENROUTER_API_KEY"):
+        env.pop(name, None)
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [sys.executable, "-m", "vsw", *args],
         cwd=str(ROOT),
@@ -110,3 +116,31 @@ def test_delegate_dry_run_rejects_crossed_roles():
     payload = json.loads(proc.stdout)
     assert payload["decision"] == "blocked"
     assert "may not take" in payload["reason"]
+
+
+def test_models_list_shows_disabled_routes_without_secrets():
+    proc = _run("models", "list", "--json")
+    assert proc.returncode == 0, proc.stderr
+    data = json.loads(proc.stdout)
+    routes = {route["name"]: route for route in data["routes"]}
+    assert routes["plan"]["enabled"] is False
+    assert routes["plan"]["model"] == "deepseek-v4.1-flash"
+    assert routes["sol"]["model"] == "openai/gpt-6-sol"
+    assert routes["plan"]["key_present"] is False
+    assert "sk-" not in proc.stdout
+
+
+def test_models_check_fails_closed_without_a_key():
+    proc = _run("models", "check", "plan")
+    assert proc.returncode == 1
+    data = json.loads(proc.stdout)
+    assert data["status"] == "unavailable"
+    assert "OPENCODE_API_KEY" in data["reason"]
+
+
+def test_models_check_rejects_unknown_route():
+    proc = _run("models", "check", "missing")
+    assert proc.returncode == 1
+    data = json.loads(proc.stdout)
+    assert data["status"] == "unavailable"
+    assert "unknown model route" in data["reason"]

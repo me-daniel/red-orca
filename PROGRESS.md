@@ -55,6 +55,28 @@ local Claude/Codex CLIs, and the local lab fixture.
   passed, its digest matches the diff the review saw, the review verdict is
   `APPROVED`, and the patch is stored under `runs/`.
 
+## Runtime model gateway (wired, routes disabled)
+
+- `ModelGateway` implements the deterministic mock, OpenRouter, and generic
+  OpenAI-compatible transports. The OpenCode Go subscription is the primary
+  compatible endpoint; OpenRouter carries Sol, Luna, Gemini, and the evaluable
+  DeepSeek/GLM fallbacks.
+- `configs/models.yaml` pins exact model IDs and efforts. Every route is
+  disabled. `vsw models list` shows route state and whether the provider key is
+  set without printing the key. `vsw models check <route>` calls one disabled
+  route once and leaves it disabled.
+- Each response records the provider-reported model, finish reason, latency,
+  usage, charged cost, and any Go allowance. Provider errors redact the API key.
+  A response without usage accounting is reported as `no_usage`.
+- `.env` is loaded at startup. `OPENCODE_API_KEY` and `OPENROUTER_API_KEY` are
+  optional; mock work needs no credentials.
+- Live checks on 2026-11-12 (connectivity and accounting only, not fixture
+  evaluations): Go `triage`, `kimi`, and `hy4`; OpenRouter `plan-openrouter`,
+  `triage-openrouter`, `luna`, `sol`, and `gemini` returned usage and a measured
+  cost or allowance. Go `plan` was refused because DeepSeek needs Global regions
+  in the Console privacy settings; `plan-openrouter` is the explicit fallback
+  until that changes.
+
 ## Live, mocked, blocked
 
 | Item | State |
@@ -64,7 +86,7 @@ local Claude/Codex CLIs, and the local lab fixture.
 | Lab fixture, passive HTTP, Playwright Chromium + scope proxy | live, loopback only |
 | AntiFox / Strix | blocked: no container runtime |
 | M2 validation checks | not started |
-| Remote model routes (OpenRouter etc.) | unavailable without keys; unused in build |
+| Runtime model routes (OpenCode Go, OpenRouter) | wired; live-checked 2026-11-12; all routes disabled |
 
 ## Known limits
 
@@ -78,3 +100,11 @@ local Claude/Codex CLIs, and the local lab fixture.
 - HTTPS targets are refused, not tunnelled: a tunnel cannot be path-checked, so HTTPS
   scope enforcement needs a decision before it is enabled. M1 is therefore a local
   HTTP observation milestone, not remote HTTPS coverage; an HTTPS-only run cannot pass.
+- Runtime routes are disabled by default. Enabling one requires a successful
+  `vsw models check` and the labelled fixture comparison in `RED_MODEL_ROUTING.md`;
+  a connectivity check alone is not an evaluation.
+- Go DeepSeek requires Global regions in the Console privacy settings. Until that
+  is set, `plan` fails closed and `plan-openrouter` is the explicit fallback.
+- Go chat completions cannot represent the unified reasoning effort for
+  Responses-native Luna and Gemini, so those routes use OpenRouter. Sending the
+  field to Go returns a provider error rather than a silent downgrade.

@@ -22,6 +22,8 @@ uv run vsw engagement validate --manifest configs/engagements/lab-local.yaml
 uv run vsw delegate --model claude --label opus --effort medium --prompt "..." --dry-run
 uv run vsw delegate --model codex --role implement --permitted-path 'src/**' --prompt "..."
 uv run vsw integrate --patch runs/<id>/patch.diff --diff-sha <sha256> --verdict APPROVED --tests-ok
+uv run vsw models list                 # runtime routes; disabled state; key presence
+uv run vsw models check <route>        # one live call; the route stays disabled
 ```
 
 ## Invariants

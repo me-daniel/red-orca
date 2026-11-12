@@ -25,6 +25,50 @@ Keep reasoning enabled at each role's specified level. Unsupported or unverified
 
 OpenCode free routes may receive a small preference only after checking current availability, exact model/revision, data terms, effort, and tool compatibility. A free alias is not proof of equivalence to a named snapshot. Do not hardcode temporary free routes as required dependencies.
 
+## Transport and configured routes
+
+`configs/models.yaml` is the runtime route table. Every route is disabled by
+default; `vsw models check <route>` calls a disabled route once without enabling
+it. Enabling is a separate edit after the fixture comparison below.
+
+| Route | Provider | Exact model | Effort | Use |
+|---|---|---|---|---|
+| `plan` | OpenCode Go | `deepseek-v4.1-flash` | High | Primary planning worker |
+| `plan-openrouter` | OpenRouter | `deepseek/deepseek-v4.1-flash-1017` | High | Evaluated fallback |
+| `triage` | OpenCode Go | `glm-5.3-flash` | High | Scanner and dependency triage |
+| `triage-openrouter` | OpenRouter | `z-ai/glm-5.3-flash` | High | Evaluated fallback |
+| `sol` | OpenRouter | `openai/gpt-6-sol` | Max | Consequential review, later cyber runs only |
+| `luna` | OpenRouter | `openai/gpt-6-luna` | Max | Independent review, later cyber runs only |
+| `kimi` | OpenCode Go | `kimi-k3.1-pro` | Max | Named difficult-evidence route |
+| `gemini` | OpenRouter | `google/gemini-4-argon` | High | Optional media and document specialist |
+| `hy4` | OpenCode Go | `hy4` | High | Optional difficult-analysis route |
+
+Keys are read from `OPENCODE_API_KEY` and `OPENROUTER_API_KEY`. `.env` is
+loaded at startup, is gitignored, and is never printed. The Go endpoint is
+OpenAI-compatible chat completions at
+`https://opencode.ai/inference/go/openai/v1`; OpenRouter is
+`https://openrouter.ai/api/v1`.
+
+Provider limits that affect a route:
+
+- Go DeepSeek requires **Global** regions in the Console privacy settings. Until
+  that is set, use `plan-openrouter` for an evaluated comparison; do not treat a
+  region refusal as a model failure.
+- Go chat completions accept the unified `reasoning: {effort}` field for the
+  open models used here. They reject it for the Responses-native Luna and
+  Gemini models, so those routes use OpenRouter, which accepts it.
+- Go reports charged cost in `usage.cost` (0 inside the subscription) and the
+  consumed allowance in `usage.opencode.allowance`. Both are recorded; an
+  allowance is not the same as a charge.
+- Sol and Luna remain later-cyber-run reviewers. Configuring a transport does
+  not authorize a cyber run or change tool permissions.
+
+`vsw models check` reports the route, response model, finish reason, latency,
+usage, charged cost, allowance, and whether usage was measured. A route with no
+usage accounting is reported as `no_usage` and is not eligible for promotion.
+A successful check is connectivity and accounting evidence, not a fixture
+evaluation; label it as a live check, separately from mock results.
+
 ## Run sequence
 
 1. Load an approved engagement and pin evidence/source revisions. Use a fixed checklist for one website; ask the primary model to adapt only when the system warrants it.

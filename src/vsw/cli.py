@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -12,13 +13,28 @@ import typer
 
 from .budget import Budget
 from .coding_agent_gateway import CodingAgentGateway, apply_reviewed_patch
-from .config import load_limits, repo_root
+from .config import load_env_file, load_limits, repo_root
 from .domain import Role, TaskEnvelope
+from .model_gateway import (
+    ModelRoute,
+    ProviderConfig,
+    ProviderUnavailable,
+    default_model_config_path,
+    gateway_for_route,
+    load_model_config,
+)
 from .orchestrator import run_mock_demo, run_observation
 from .policy import BUILD_ROUTES, RoutingDenied, enforce_role, resolve_build_route
 from .smoke import run_smoke
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+
+@app.callback()
+def _bootstrap() -> None:
+    """Load local `.env` settings before any command."""
+    load_env_file(repo_root() / ".env")
+
 
 REQUIRED_SKILLS = (
     "security-adapter",
@@ -112,6 +128,43 @@ def doctor(
         _result(checks, "policy:role_split", False, "claude was allowed to implement")
     except RoutingDenied as exc:
         _result(checks, "policy:role_split", exc.status == "blocked", exc.reason)
+
+    model_path = default_model_config_path(root)
+    try:
+        model_config = load_model_config(model_path)
+        enabled = sum(1 for route in model_config.routes.values() if route.enabled)
+        _result(
+            checks,
+            "model_config",
+            True,
+            f"{len(model_config.routes)} routes, {enabled} enabled: {model_path}",
+        )
+        seen_providers: set[str] = set()
+        for route in model_config.routes.values():
+            provider = model_config.providers[route.provider]
+            if provider.name in seen_providers:
+                continue
+            seen_providers.add(provider.name)
+            key_present = bool(os.environ.get(provider.api_key_env))
+            _result(
+                checks,
+                f"model_key:{provider.name}",
+                key_present,
+                f"{provider.api_key_env} {'set' if key_present else 'missing'}; "
+                "runtime routes stay disabled until enabled",
+                required=False,
+            )
+        for route in model_config.routes.values():
+            _result(
+                checks,
+                f"model_route:{route.name}",
+                True,
+                f"{route.provider}/{route.model} effort={route.effort} "
+                f"{'enabled' if route.enabled else 'disabled'}",
+                required=False,
+            )
+    except ProviderUnavailable as exc:
+        _result(checks, "model_config", False, str(exc))
 
     _result(checks, "docker_for_m2", bool(shutil.which("docker")), "needed by AntiFox/Strix", False)
 
@@ -307,6 +360,125 @@ def policy() -> None:
             indent=2,
         )
     )
+
+
+# -- runtime model routes ----------------------------------------------------
+
+models_app = typer.Typer(no_args_is_help=True, help="Inspect or check runtime model routes.")
+app.add_typer(models_app, name="models")
+
+
+def _route_payload(
+    name: str, route: ModelRoute, provider: ProviderConfig
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "provider": provider.name,
+        "base_url": provider.base_url,
+        "model": route.model,
+        "effort": route.effort,
+        "max_tokens": route.max_tokens,
+        "enabled": route.enabled,
+        "api_key_env": provider.api_key_env,
+        "key_present": bool(os.environ.get(provider.api_key_env)),
+        "purpose": route.purpose,
+    }
+
+
+@models_app.command("list")
+def models_list(
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """List configured runtime routes. Secret values are never printed."""
+    try:
+        config = load_model_config(default_model_config_path(repo_root()))
+    except ProviderUnavailable as exc:
+        typer.echo(json.dumps({"status": "error", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    rows = [
+        _route_payload(name, config.routes[name], config.providers[config.routes[name].provider])
+        for name in sorted(config.routes)
+    ]
+    if json_output:
+        typer.echo(json.dumps({"routes": rows}, indent=2))
+        return
+    for row in rows:
+        state = "enabled" if row["enabled"] else "disabled"
+        key = "set" if row["key_present"] else "missing"
+        typer.echo(
+            f"{row['name']:18} {row['provider']}/{row['model']} "
+            f"effort={row['effort']} max_tokens={row['max_tokens']} "
+            f"{state} key={key} ({row['api_key_env']})"
+        )
+
+
+@models_app.command("check")
+def models_check(
+    route: str = typer.Argument(..., help="Route name from configs/models.yaml."),
+) -> None:
+    """Call one route once. Disabled routes are checkable but stay disabled."""
+    limits = load_limits(repo_root())
+    try:
+        config = load_model_config(default_model_config_path(repo_root()))
+        route_config = config.routes.get(route)
+        if route_config is None:
+            raise ProviderUnavailable(f"unknown model route: {route}")
+        provider = config.providers[route_config.provider]
+        gateway = gateway_for_route(config, route, limits=limits, allow_disabled=True)
+    except ProviderUnavailable as exc:
+        typer.echo(
+            json.dumps(
+                {"mode": "live", "status": "unavailable", "route": route, "reason": str(exc)},
+                indent=2,
+            )
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        response = gateway.complete("Reply with the single word: pong", role="check")
+    except ProviderUnavailable as exc:
+        typer.echo(
+            json.dumps(
+                {
+                    "mode": "live",
+                    "status": "unavailable",
+                    "route": route,
+                    "provider": provider.name,
+                    "model": route_config.model,
+                    "reason": str(exc),
+                },
+                indent=2,
+            )
+        )
+        raise typer.Exit(code=1)
+
+    payload: dict[str, object] = {
+        "mode": "live",
+        "status": "ok" if response.usage else "no_usage",
+        "route": route,
+        "provider": provider.name,
+        "requested_model": route_config.model,
+        "response_model": response.model,
+        "effort": route_config.effort,
+        "enabled": route_config.enabled,
+        "finish_reason": response.finish_reason,
+        "latency_s": response.latency_s,
+        "usage": response.usage,
+        "cost_usd": response.cost_usd,
+        "cost_measured": response.cost_measured,
+        "billing_source": response.billing_source,
+        "allowance_usd": response.allowance_usd,
+        "text": response.text,
+        "text_empty": not response.text.strip(),
+        "note": response.note,
+    }
+    if not route_config.enabled:
+        payload["route_state"] = (
+            "disabled: check only; enable in configs/models.yaml after evaluation"
+        )
+    typer.echo(json.dumps(payload, indent=2))
+    if not response.usage:
+        raise typer.Exit(code=1)
 
 
 # -- M1: lab, observation runs, findings, reports ---------------------------

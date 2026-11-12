@@ -1,0 +1,94 @@
+# Runtime model routes for assessment runs.
+#
+# Every route is disabled by default. A route is enabled only after
+# `vsw models check <route>` succeeds and its behaviour is compared on the
+# labelled fixtures. Build delegation does not use this file; it stays on the
+# Claude/Codex CLIs through MODEL_ROUTING.md.
+#
+# Exact model IDs were checked against the provider model lists on 2026-11-12.
+# No alias, fallback, or silent substitution is applied.
+
+providers:
+  opencode-go:
+    base_url: https://opencode.ai/inference/go/openai/v1
+    api_key_env: OPENCODE_API_KEY
+    session_header: x-opencode-session
+    user_agent: vsw/0.1
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    app_url: https://github.com/me-daniel/red-orca
+    app_title: vsw
+    user_agent: vsw/0.1
+
+routes:
+  plan:
+    provider: opencode-go
+    model: deepseek-v4.1-flash
+    effort: high
+    max_tokens: 4096
+    enabled: false
+    purpose: >-
+      Routine planning and deployment analysis. Go privacy must allow Global
+      regions for DeepSeek V4.1 Flash.
+  plan-openrouter:
+    provider: openrouter
+    model: deepseek/deepseek-v4.1-flash-1017
+    effort: high
+    max_tokens: 4096
+    enabled: false
+    purpose: Evaluated fallback for plan when the Go DeepSeek route is unavailable.
+  triage:
+    provider: opencode-go
+    model: glm-5.3-flash
+    effort: high
+    max_tokens: 4096
+    enabled: false
+    purpose: Dependency and scanner-evidence triage.
+  triage-openrouter:
+    provider: openrouter
+    model: z-ai/glm-5.3-flash
+    effort: high
+    max_tokens: 4096
+    enabled: false
+    purpose: Evaluated fallback for triage when the Go GLM route is unavailable.
+  sol:
+    provider: openrouter
+    model: openai/gpt-6-sol
+    effort: max
+    max_tokens: 4096
+    enabled: false
+    purpose: Consequential evidence and validation review; later cyber runs only.
+  luna:
+    provider: openrouter
+    model: openai/gpt-6-luna
+    effort: max
+    max_tokens: 4096
+    enabled: false
+    purpose: >-
+      Independent review and evidence organization. OpenRouter carries Max
+      effort because Go chat completions cannot represent the unified reasoning
+      field for this Responses-native model.
+  kimi:
+    provider: opencode-go
+    model: kimi-k3.1-pro
+    effort: max
+    max_tokens: 4096
+    enabled: false
+    purpose: Optional named difficult-evidence route after fixture comparison.
+  gemini:
+    provider: openrouter
+    model: google/gemini-4-argon
+    effort: high
+    max_tokens: 4096
+    enabled: false
+    purpose: >-
+      Optional media and document specialist. OpenRouter carries the effort
+      because Go chat completions cannot represent it for this Gemini model.
+  hy4:
+    provider: opencode-go
+    model: hy4
+    effort: high
+    max_tokens: 4096
+    enabled: false
+    purpose: Optional difficult-analysis route after fixture comparison.
