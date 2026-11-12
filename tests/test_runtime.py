@@ -97,3 +97,25 @@ def test_incomplete_adapter_never_reports_no_issue_found(
     assert ledger.entries[0].source == "machine"
     assert ledger.entries[0].outcome == CoverageOutcome.NEEDS_FOLLOW_UP
     assert ledger.entries[0].evidence_ids == ["E-001"]
+
+
+def test_completed_capture_does_not_claim_all_capabilities_clean(tmp_path: Path):
+    store = _store(tmp_path)
+    ledger = CoverageLedger(store)
+    ledger.record_observation(
+        target="http://127.0.0.1:8787/clean/",
+        adapters=[
+            {
+                "adapter": "passive-http",
+                "status": "completed",
+                "capabilities": ["http.headers", "http.reflection", "http.cookies"],
+            }
+        ],
+        evidence=store.records(),
+        findings=[],
+    )
+    entry = ledger.entries[0]
+    assert entry.source == "machine"
+    assert entry.risk_area == "adapter observation"
+    assert entry.outcome == CoverageOutcome.NEEDS_FOLLOW_UP
+    assert entry.evidence_ids == ["E-001"]

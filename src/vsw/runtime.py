@@ -69,7 +69,8 @@ class CoverageLedger:
                 and item.get("kind") in {"http", "browser"}
                 and item.get("id")
             ]
-            risk_area = ", ".join(str(item) for item in adapter.get("capabilities", [])) or name
+            # Capabilities are advertised, not proof that every check ran.
+            risk_area = "adapter observation"
             status = str(adapter["status"])
             if status != "completed" or stop_reason:
                 outcome = CoverageOutcome.NEEDS_FOLLOW_UP
@@ -78,8 +79,8 @@ class CoverageLedger:
                 outcome = CoverageOutcome.REPORTED
                 note = "finding(s) linked to this adapter's captures"
             elif evidence_ids:
-                outcome = CoverageOutcome.NO_ISSUE_FOUND
-                note = "no finding in the captured evidence"
+                outcome = CoverageOutcome.NEEDS_FOLLOW_UP
+                note = "captures recorded; per-check negative coverage was not measured"
             else:
                 outcome = CoverageOutcome.NEEDS_FOLLOW_UP
                 note = "adapter completed without captured evidence"

@@ -8,7 +8,6 @@ must stay inside the permitted paths, and the reviewer runs read-only.
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +20,7 @@ from .coding_agent_gateway import (
 )
 from .config import load_limits, repo_root
 from .domain import Role, Status, TaskEnvelope
-from .util import utc_now
+from .util import new_run_dir, utc_now
 
 SPEC = """Write Python 3 code for this specification.
 
@@ -129,9 +128,7 @@ def run_smoke(mode: str = "mock", root: Path | None = None) -> dict[str, Any]:
     adapters: dict[str, Adapter] | None = _mock_adapters() if mode == "mock" else None
     gateway = CodingAgentGateway(limits, budget, adapters=adapters, root=root)
 
-    run_id = time.strftime("smoke-%Y%m%d-%H%M%S", time.gmtime())
-    run_dir = root / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_id, run_dir = new_run_dir(root, "smoke")
     report: dict[str, Any] = {
         "run_id": run_id,
         "stage": "M0",

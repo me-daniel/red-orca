@@ -88,8 +88,9 @@ local Claude/Codex CLIs, and the local lab fixture.
 
 ## Engine reference review (AntiFox, Strix)
 
-- Read-only study of AntiFox `070f798` (AGPL-3.0) and Strix `0111915`
-  (`strix-agent` 1.7.1, Apache-2.0). Notes and licensing boundary live in
+- Read-only study of AntiFox `070f798` and Strix `0111915`
+  (`strix-agent` 1.7.1). Current local licenses are CC0-1.0 and Unlicense;
+  the current Strix checkout contains only `LICENSE`. Notes live in
   `docs/engine-reference.md`. No upstream code or prompt text was copied.
 - Adopted natively: in-situ reproduction (`entry_point`, prerequisites, ordered
   verbatim request/response steps, provenance), traffic/exchange ids, a coverage
@@ -107,8 +108,20 @@ local Claude/Codex CLIs, and the local lab fixture.
   verified evidence store. Machine-observed entries are constructed only by the
   runtime coverage ledger; `CoverageEntry` is fixed to `agent`.
 - Deliberately not copied: AntiFox's missing scope layer, fail-open traffic
-  capture, or AGPL code; Strix's full Kali tool fleet and agent SDK. Engines stay
+  capture, or upstream code; Strix's full Kali tool fleet and agent SDK. Engines stay
   optional adapters.
+
+## Second improvement pass
+
+- Run directories are reserved exclusively, so same-second observation, smoke,
+  and demo runs cannot mix evidence or overwrite reports.
+- The observation coordinator validates each adapter's declared identity,
+  methods, destinations, and mutation flag before execution, and records plan
+  failures as incomplete adapter results.
+- Findings and returned records must link to verified captures from that
+  adapter. Validated findings also require a captured reproduction. A bad link
+  fails the run and withholds evidence from export. Generic captures no longer
+  claim `no_issue_found` for every advertised adapter capability.
 
 ## Live, mocked, blocked
 

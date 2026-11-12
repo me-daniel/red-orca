@@ -457,7 +457,7 @@ def write_observation_artifacts(
         started=started,
         finished=finished,
         status=status,
-        evidence_integrity=evidence_integrity,
+        evidence_integrity=payload["evidence_integrity"],
     )
     write_report(run_dir, payload=payload, markdown=markdown)
     _write_json(run_dir, "coverage.json", payload["coverage"])

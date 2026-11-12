@@ -53,7 +53,7 @@ class PassiveHttpAdapter(BaseAdapter):
         return CheckPlan(
             adapter=self.name,
             destinations=list(seeds),
-            methods=list(self.engagement.methods),
+            methods=["GET"],
             mutations=False,
             estimated_requests=min(len(seeds), self.engagement.max_requests),
             cleanup="none",

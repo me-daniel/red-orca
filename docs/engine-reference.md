@@ -6,13 +6,14 @@ is copied into `vsw`.
 
 | Project | Reviewed commit | Version | License | Role in `vsw` |
 |---|---|---|---|---|
-| [AntiFox](https://github.com/AntiFox-AI/antifox) | `070f798bf590667bc2a0a13c687dd87d8a4413bf` | Go 1.26.3 tree | AGPL-3.0 | Reference for stepwise reproduction, traffic-linked evidence, and graph-driven planning |
-| [Strix](https://github.com/usestrix/strix) | `01119158f8f50027591cbae73f37cf0a2fea644d` | `strix-agent` 1.7.1 | Apache-2.0 | Reference for coverage provenance, finding schema, SARIF, sandbox limits, and budget parking |
+| [AntiFox](https://github.com/AntiFox-AI/antifox) | `070f798bf590667bc2a0a13c687dd87d8a4413bf` | Go 1.26.3 tree | CC0-1.0 in current local checkout | Reference for stepwise reproduction, traffic-linked evidence, and graph-driven planning |
+| [Strix](https://github.com/usestrix/strix) | `01119158f8f50027591cbae73f37cf0a2fea644d` | `strix-agent` 1.7.1 | Unlicense in current local checkout | Reference for coverage provenance, finding schema, SARIF, sandbox limits, and budget parking |
 
-AntiFox is copyleft. Copying its code into `vsw` would change `vsw`'s licensing
-obligations. Study behaviour; implement independently. Strix is Apache-2.0, but
-its prompts, skills, and sandbox image have their own terms. Keep the same
-clean-room boundary for both.
+The license labels above come from the local `LICENSE` files inspected in this
+pass. The current local Strix checkout contains only that file, so its code and
+the earlier architecture notes below could not be rechecked here. Keep this
+review behavioural; verify the exact pinned artifact and supporting materials
+before reuse or distribution.
 
 ## AntiFox
 
@@ -158,7 +159,7 @@ paths and traversal.
 
 ## What `vsw` should not copy
 
-- AntiFox source or prompt text. It is AGPL-3.0; this review is behavioural only.
+- AntiFox source or prompt text. This review is behavioural only.
 - AntiFox's missing scope layer or fail-open traffic capture.
 - Strix's full Kali tool fleet, its agent SDK, or its sandbox as a dependency.
   `vsw` keeps its own bounded deterministic pipeline and adds engines only as
@@ -194,7 +195,7 @@ Strix remains the comparison engine.
 
 ## Licensing note
 
-This document is a behavioural summary, not legal advice. Before distributing
-`vsw` with an AntiFox adapter, review AGPL-3.0 obligations. Before reusing any
-Strix code, preserve Apache-2.0 notices and check the terms of its skills,
-prompts, and container image.
+The current local AntiFox `LICENSE` says CC0-1.0; the current local Strix
+`LICENSE` says Unlicense. The earlier reviewed commit IDs were not rechecked in
+this pass. Check the license and notices of each exact artifact before reuse,
+including any separate skills, prompts, and container image.

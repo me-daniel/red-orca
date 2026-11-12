@@ -37,7 +37,7 @@ Read only documentation relevant to the current milestone. Pin upstream commits/
 | AI tests | [promptfoo](https://github.com/promptfoo/promptfoo) | Synthetic prompt-injection, retrieval, and tool-permission evaluations |
 | Labs | [Juice Shop](https://github.com/juice-shop/juice-shop) + [crAPI](https://github.com/OWASP/crAPI) | Isolated web/API targets; add clean control fixtures |
 
-AntiFox documents planner/worker orchestration and evidence captured during execution, including request/response associations. Evaluate these features rather than reconstructing reproduction steps from model prose. It is AGPL-3.0: document obligations before code reuse/distribution; running it separately does not automatically resolve licensing questions. Keep its database/services isolated from the Workbench control plane.
+AntiFox documents planner/worker orchestration and evidence captured during execution, including request/response associations. Evaluate these features rather than reconstructing reproduction steps from model prose. The local reference checkout carries CC0-1.0; check the license of the exact pinned artifact before code reuse or distribution. Keep its database/services isolated from the Workbench control plane.
 
 Implement one engine end to end before the second; default to AntiFox after the deterministic pipeline, switching implementation order only for a documented compatibility blocker. Do not nest AntiFox and Strix agent loops. Both receive the same policy, budgets, and evidence contract. An engine that cannot respect the required isolation stays lab-only or disabled.
 

@@ -9,13 +9,9 @@ from vsw.orchestrator import run_observation
 from vsw.scope import ScopeDenied, approve_manifest
 
 
-@pytest.mark.parametrize("tamper", [False, True])
-def test_run_artifacts_from_mock_capture_without_sockets(tmp_path, monkeypatch, tamper):
-    """Exercise orchestration and real analysis with a deterministic local capture mock."""
-    from vsw.adapters.passive_http import PassiveHttpAdapter
-
-    manifest_path = tmp_path / "engagement.yaml"
-    manifest_path.write_text(
+def _mock_manifest(tmp_path: Path) -> Path:
+    path = tmp_path / "engagement.yaml"
+    path.write_text(
         json.dumps(
             {
                 "id": "mock-fixture",
@@ -28,7 +24,16 @@ def test_run_artifacts_from_mock_capture_without_sockets(tmp_path, monkeypatch, 
             }
         )
     )
-    approve_manifest(manifest_path, "tester")
+    approve_manifest(path, "tester")
+    return path
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_run_artifacts_from_mock_capture_without_sockets(tmp_path, monkeypatch, tamper):
+    """Exercise orchestration and real analysis with a deterministic local capture mock."""
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+
+    manifest_path = _mock_manifest(tmp_path)
 
     def capture(self, plan):
         url = plan.destinations[0]
@@ -74,6 +79,8 @@ def test_run_artifacts_from_mock_capture_without_sockets(tmp_path, monkeypatch, 
     if tamper:
         assert report["status"] == "fail"
         assert report["evidence"] == []
+        assert report["coverage"]["targets_visited"] == []
+        assert report["adapters"][0]["requests"] == 0
         assert all(item["state"] == "inconclusive" for item in report["findings"])
         assert all(not item["reproduction_verified"] for item in report["findings"])
         assert json.loads((run_dir / "exchanges.json").read_text())["exchanges"] == []
@@ -95,6 +102,296 @@ def test_run_artifacts_from_mock_capture_without_sockets(tmp_path, monkeypatch, 
         assert run_summary["validated"] == sum(
             item["state"] == "validated" for item in report["findings"]
         )
+
+
+def test_immediate_runs_have_distinct_artifacts(tmp_path, monkeypatch):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+
+    def capture(self, plan):
+        url = plan.destinations[0]
+        self.guard.authorize(url, "GET")
+        return [
+            self.store.capture(
+                kind="http",
+                url=url,
+                status=200,
+                response_headers={"Content-Type": "text/plain"},
+                body="clean capture",
+                source=self.name,
+            )
+        ]
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", capture)
+    path = _mock_manifest(tmp_path)
+    monkeypatch.setattr("vsw.util.time.strftime", lambda *_: "20261112-000000")
+    target = "http://127.0.0.1:8787/vuln/"
+    first = run_observation(path, target, use_browser=False, root=tmp_path)
+    second = run_observation(path, target, use_browser=False, root=tmp_path)
+    assert first["run_id"] != second["run_id"]
+    assert first["run_dir"] != second["run_dir"]
+    assert [item["id"] for item in first["evidence"]] == ["E-001"]
+    assert [item["id"] for item in second["evidence"]] == ["E-001"]
+    assert EvidenceStore(Path(first["run_dir"])).verify() == []
+    assert EvidenceStore(Path(second["run_dir"])).verify() == []
+
+
+@pytest.mark.parametrize(
+    ("plan_change", "expected_status"),
+    [
+        ({"adapter": "other-engine"}, "failed"),
+        ({"destinations": ["http://127.0.0.1:8787/outside/"]}, "blocked"),
+        ({"methods": ["POST"]}, "failed"),
+    ],
+)
+def test_invalid_adapter_plan_is_recorded_without_execution(
+    tmp_path, monkeypatch, plan_change, expected_status
+):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.domain import CheckPlan
+
+    calls = []
+
+    def bad_plan(self, seeds):
+        data = {"adapter": self.name, "destinations": seeds, "methods": ["GET"]}
+        data.update(plan_change)
+        return CheckPlan(**data)
+
+    def execute(self, plan):
+        calls.append(plan)
+        return []
+
+    monkeypatch.setattr(PassiveHttpAdapter, "plan", bad_plan)
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", execute)
+    report = run_observation(
+        _mock_manifest(tmp_path),
+        "http://127.0.0.1:8787/vuln/",
+        use_browser=False,
+        root=tmp_path,
+    )
+    assert calls == []
+    assert report["status"] == "fail"
+    assert report["adapters"][0]["adapter"] == "passive-http"
+    assert report["adapters"][0]["status"] == expected_status
+    assert report["coverage"]["requests_made"] == 0
+
+
+@pytest.mark.parametrize("link_failure", ["missing_evidence", "no_reproduction"])
+def test_finding_without_verified_support_cannot_pass(tmp_path, monkeypatch, link_failure):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.domain import Finding, FindingState, Severity
+
+    def capture(self, plan):
+        url = plan.destinations[0]
+        self.guard.authorize(url, "GET")
+        return [self.store.capture(kind="http", url=url, status=200, body="ok", source=self.name)]
+
+    def forged_finding(self, records):
+        return [
+            Finding(
+                id="F-001",
+                title="Unsupported claim",
+                asset="http://127.0.0.1:8787",
+                endpoint="/vuln/",
+                check_id="test.unsupported.secret=checksecret",
+                check_version="1",
+                severity=Severity.LOW,
+                confidence="high",
+                state=FindingState.VALIDATED,
+                evidence_ids=["E-999" if link_failure == "missing_evidence" else records[0].id],
+            )
+        ]
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", capture)
+    monkeypatch.setattr(PassiveHttpAdapter, "normalize", forged_finding)
+    report = run_observation(
+        _mock_manifest(tmp_path),
+        "http://127.0.0.1:8787/vuln/",
+        use_browser=False,
+        root=tmp_path,
+    )
+    assert report["status"] == "fail"
+    assert report["adapters"][0]["status"] == "failed"
+    assert report["evidence_integrity"]
+    assert report["evidence"] == []
+    assert report["findings"][0]["state"] == "inconclusive"
+    assert report["findings"][0]["reproduction_verified"] is False
+    run_dir = Path(report["run_dir"])
+    assert "checksecret" not in (run_dir / "findings.json").read_text()
+    assert "checksecret" not in (run_dir / "report.md").read_text()
+
+
+def test_deduped_validated_finding_keeps_its_captured_reproduction(tmp_path, monkeypatch):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.domain import Finding, FindingState, Reproduction, ReproStep, Severity
+
+    def capture(self, plan):
+        records = []
+        for suffix in ("first", "second"):
+            url = f"http://127.0.0.1:8787/vuln/{suffix}"
+            self.guard.authorize(url, "GET")
+            request = f"GET /vuln/{suffix} HTTP/1.1\nHost: 127.0.0.1:8787\n\n"
+            records.append(
+                self.store.capture(
+                    kind="http",
+                    url=url,
+                    status=200,
+                    body="proof",
+                    request_text=request,
+                    response_text="HTTP/1.1 200 OK\n\nproof",
+                    source=self.name,
+                )
+            )
+        return records
+
+    def normalize(self, records):
+        findings = []
+        for index, record in enumerate(records):
+            detail = None
+            if index == 1:
+                detail = Reproduction(
+                    entry_point="GET /vuln/second",
+                    steps=[
+                        ReproStep(
+                            request=record.request_text,
+                            response=record.response_text,
+                            exchange_id=record.id,
+                            evidence_ids=[record.id],
+                        )
+                    ],
+                )
+            findings.append(
+                Finding(
+                    id="",
+                    title="Same underlying check",
+                    asset="http://127.0.0.1:8787",
+                    endpoint=f"/vuln/{'first' if index == 0 else 'second'}",
+                    check_id="headers.demo",
+                    check_version="1",
+                    severity=Severity.LOW,
+                    confidence="high",
+                    state=FindingState.OBSERVED if index == 0 else FindingState.VALIDATED,
+                    evidence_ids=[record.id],
+                    reproduction_detail=detail,
+                )
+            )
+        return findings
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", capture)
+    monkeypatch.setattr(PassiveHttpAdapter, "normalize", normalize)
+    report = run_observation(
+        _mock_manifest(tmp_path),
+        "http://127.0.0.1:8787/vuln/",
+        use_browser=False,
+        root=tmp_path,
+    )
+    assert report["status"] == "pass"
+    assert len(report["findings"]) == 1
+    finding = report["findings"][0]
+    assert finding["state"] == "validated"
+    assert finding["reproduction_verified"] is True
+    assert finding["reproduction_detail"]["steps"][0]["exchange_id"] == "E-002"
+    assert finding["evidence_ids"] == ["E-002", "E-001"]
+
+
+def test_cross_adapter_dedupe_keeps_verified_evidence(tmp_path, monkeypatch):
+    from vsw.adapters.browser import BrowserAdapter
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.domain import Finding, FindingState, Severity
+
+    def capture(self, plan):
+        url = plan.destinations[0]
+        self.guard.authorize(url, "GET")
+        kind = "http" if self.name == "passive-http" else "browser"
+        return [self.store.capture(kind=kind, url=url, status=200, source=self.name)]
+
+    def normalize(self, records):
+        return [
+            Finding(
+                id="",
+                title="Cookie flags",
+                asset="http://127.0.0.1:8787",
+                endpoint="/vuln/",
+                check_id="cookies.flags.sid",
+                check_version="1",
+                severity=Severity.LOW,
+                confidence="high",
+                state=FindingState.OBSERVED,
+                evidence_ids=[records[0].id],
+            )
+        ]
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", capture)
+    monkeypatch.setattr(BrowserAdapter, "execute", capture)
+    monkeypatch.setattr(PassiveHttpAdapter, "normalize", normalize)
+    monkeypatch.setattr(BrowserAdapter, "normalize", normalize)
+    report = run_observation(
+        _mock_manifest(tmp_path),
+        "http://127.0.0.1:8787/vuln/",
+        use_browser=True,
+        root=tmp_path,
+    )
+    assert report["status"] == "pass"
+    assert report["evidence_integrity"] == []
+    assert len(report["findings"]) == 1
+    assert report["findings"][0]["evidence_ids"] == ["E-001", "E-002"]
+
+
+def test_unpersisted_adapter_record_cannot_pass(tmp_path, monkeypatch):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.evidence import EvidenceRecord
+
+    def fake_capture(self, plan):
+        self.guard.authorize(plan.destinations[0], "GET")
+        return [
+            EvidenceRecord(
+                id="E-001",
+                kind="http",
+                url=plan.destinations[0],
+                source=self.name,
+                truncated=True,
+            )
+        ]
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", fake_capture)
+    monkeypatch.setattr(PassiveHttpAdapter, "normalize", lambda self, records: [])
+    report = run_observation(
+        _mock_manifest(tmp_path),
+        "http://127.0.0.1:8787/vuln/",
+        use_browser=False,
+        root=tmp_path,
+    )
+    assert report["status"] == "fail"
+    assert report["evidence"] == []
+    assert "returned evidence" in report["evidence_integrity"][0]
+    assert report["coverage"]["targets_visited"] == []
+    assert report["coverage"]["truncated_pages"] == []
+    assert report["adapters"][0]["requests"] == 0
+
+
+def test_blocked_only_adapter_cannot_pass(tmp_path, monkeypatch):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+
+    def blocked_capture(self, plan):
+        return [
+            self.store.capture(
+                kind="blocked",
+                url=plan.destinations[0],
+                source=self.name,
+                notes={"reason": "no observation"},
+            )
+        ]
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", blocked_capture)
+    monkeypatch.setattr(PassiveHttpAdapter, "normalize", lambda self, records: [])
+    report = run_observation(
+        _mock_manifest(tmp_path),
+        "http://127.0.0.1:8787/vuln/",
+        use_browser=False,
+        root=tmp_path,
+    )
+    assert report["status"] == "partial"
+    assert report["adapters"][0]["status"] == "partial"
+    assert report["coverage"]["entries"][0]["outcome"] == "needs_follow_up"
 
 
 def test_vulnerable_reflection_is_validated_with_evidence(tmp_path, manifest, lab_server):
@@ -288,13 +585,13 @@ def test_runtime_records_machine_coverage_with_valid_evidence(tmp_path, manifest
         entry for entry in report["coverage"]["entries"] if entry["source"] == "machine"
     ]
     assert machine
-    clean = [entry for entry in machine if entry["outcome"] == "no_issue_found"]
-    assert clean
-    for entry in clean:
+    # A capture proves observation, but does not prove every advertised check ran.
+    assert all(entry["outcome"] == "needs_follow_up" for entry in machine)
+    for entry in machine:
         assert entry["evidence_ids"]
         assert set(entry["evidence_ids"]) <= evidence_ids
 
     markdown = Path(report["run_dir"], "report.md").read_text(encoding="utf-8")
     assert "### Coverage ledger" in markdown
     assert "| machine |" in markdown
-    assert "| no_issue_found |" in markdown
+    assert "per-check negative coverage was not measured" in markdown

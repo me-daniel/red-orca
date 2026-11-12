@@ -19,6 +19,20 @@ def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def new_run_dir(root: Path, prefix: str) -> tuple[str, Path]:
+    """Reserve a run directory without ever reusing another run's evidence."""
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    for sequence in range(1000):
+        run_id = f"{prefix}-{stamp}-{sequence:03d}"
+        run_dir = root / "runs" / run_id
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            continue
+        return run_id, run_dir
+    raise RuntimeError(f"cannot reserve a unique {prefix} run directory")
+
+
 def truncate(text: str, limit: int) -> tuple[str, bool]:
     if len(text) <= limit:
         return text, False
