@@ -1,10 +1,12 @@
-# The RED ORCA POD
+# The Red Orca Pod
 
 <p align="center">
   <img src="assets/banner.svg" alt="Red Orca Pod: an open-weights cyber agent for red teams" width="100%">
 </p>
 
-**Red-team Enabled Deployment of Orchestrated Reasoning across Cybersecurity Agents for Penetration Operations & Discovery**
+**Red-team Enabled Deployment of 
+<br>Orchestrated Reasoning across Cybersecurity Agents for 
+<br>Penetration Operations & Discovery**
 
 RED ORCA POD is an open, model-agnostic cybersecurity solution built for you and anyone without Mythos access.
 
