@@ -1,4 +1,4 @@
-# Red Orca Pod
+# The RED ORCA POD
 
 <p align="center">
   <img src="assets/banner.svg" alt="Red Orca Pod: an open-weights cyber agent for red teams" width="100%">
