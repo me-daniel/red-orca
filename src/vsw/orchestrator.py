@@ -12,11 +12,13 @@ from .adapters.browser import BrowserAdapter
 from .adapters.passive_http import PassiveHttpAdapter
 from .budget import Budget
 from .config import load_limits, repo_root
-from .domain import Coverage, Engagement, Finding, FindingState, Severity
-from .evidence import EvidenceStore
+from .domain import Coverage, CoverageOutcome, Engagement, Finding, FindingState, Severity
+from .evidence import EvidenceStore, redact_text
 from .model_gateway import MockModelGateway
 from .policy import RoutingDenied, resolve_build_route
 from .reporting import render_markdown, write_report
+from .reproduction import finding_export
+from .runtime import CoverageLedger
 from .scope import ScopeError, ScopeGuard, load_engagement, manifest_hash
 from .smoke import run_smoke
 from .util import utc_now
@@ -201,7 +203,7 @@ def run_observation(
     findings: list[Finding] = []
     adapter_reports: list[dict[str, Any]] = []
     coverage = Coverage(
-        targets_planned=list(seeds),
+        targets_planned=[redact_text(item) for item in seeds],
         request_limit=engagement.max_requests,
     )
 
@@ -237,8 +239,9 @@ def run_observation(
             if adapter.name == "passive-http":
                 visited = getattr(adapter, "visited", [])
                 for url in visited:
-                    if url not in coverage.targets_visited:
-                        coverage.targets_visited.append(url)
+                    safe_url = redact_text(str(url))
+                    if safe_url not in coverage.targets_visited:
+                        coverage.targets_visited.append(safe_url)
             failures = list(getattr(adapter, "failures", []) or [])
             if failures and entry["status"] == "completed":
                 entry["status"] = "partial" if entry["requests"] else "failed"
@@ -252,6 +255,7 @@ def run_observation(
         except Exception as exc:  # noqa: BLE001 - record and keep the run honest
             entry["status"] = "failed"
             entry["note"] = f"{type(exc).__name__}: {exc}"
+        entry["note"] = redact_text(str(entry.get("note") or ""))
         entry["duration_s"] = round(time.monotonic() - begin, 3)
         adapter_reports.append(entry)
 
@@ -263,7 +267,10 @@ def run_observation(
             notes={"reason": blocked.get("reason", ""), "kind": blocked.get("kind", "")},
         )
         coverage.skipped.append(
-            {"url": str(blocked.get("url", "")), "reason": str(blocked.get("reason", ""))}
+            {
+                "url": redact_text(str(blocked.get("url", ""))),
+                "reason": str(blocked.get("reason", "")),
+            }
         )
 
     coverage.requests_made = guard.requests
@@ -272,6 +279,57 @@ def run_observation(
     findings = _dedupe(findings)
     integrity = store.verify()
     evidence = store.records()
+    evidence_index = {str(item["id"]): item for item in evidence if item.get("id")}
+    ledger = CoverageLedger(store)
+    finding_evidence_ids = {eid for finding in findings for eid in finding.evidence_ids}
+    for entry in adapter_reports:
+        adapter_evidence = [
+            item
+            for item in evidence
+            if item.get("source") == entry["adapter"]
+            and item.get("kind") in {"http", "browser"}
+        ]
+        evidence_ids = [str(item["id"]) for item in adapter_evidence if item.get("id")]
+        risk_area = ", ".join(str(item) for item in entry.get("capabilities", [])) or str(
+            entry["adapter"]
+        )
+        if entry["status"] not in {"completed", "partial"}:
+            ledger.record_machine(
+                surface=redact_text(str(target)),
+                risk_area=risk_area,
+                outcome=CoverageOutcome.NEEDS_FOLLOW_UP,
+                evidence_ids=evidence_ids,
+                evidence=str(entry.get("note") or "adapter did not complete"),
+                agent=str(entry["adapter"]),
+            )
+        elif any(evidence_id in finding_evidence_ids for evidence_id in evidence_ids):
+            ledger.record_machine(
+                surface=redact_text(str(target)),
+                risk_area=risk_area,
+                outcome=CoverageOutcome.REPORTED,
+                evidence_ids=evidence_ids,
+                evidence="finding(s) linked to this adapter's captures",
+                agent=str(entry["adapter"]),
+            )
+        elif evidence_ids:
+            ledger.record_machine(
+                surface=redact_text(str(target)),
+                risk_area=risk_area,
+                outcome=CoverageOutcome.NO_ISSUE_FOUND,
+                evidence_ids=evidence_ids,
+                evidence="no finding in the captured exchanges",
+                agent=str(entry["adapter"]),
+            )
+        else:
+            ledger.record_machine(
+                surface=redact_text(str(target)),
+                risk_area=risk_area,
+                outcome=CoverageOutcome.NEEDS_FOLLOW_UP,
+                evidence_ids=[],
+                evidence="adapter completed without captured HTTP evidence",
+                agent=str(entry["adapter"]),
+            )
+    coverage.entries = ledger.entries
 
     finished = utc_now()
     engagement_summary = {
@@ -310,12 +368,12 @@ def run_observation(
         "finished": finished,
         "engagement": engagement_summary,
         "coverage": coverage.model_dump(mode="json"),
-        "findings": [finding.model_dump(mode="json") for finding in findings],
+        "findings": [finding_export(finding, evidence_index) for finding in findings],
         "evidence": evidence,
         "adapters": adapter_reports,
         "budget": budget.status(),
         "evidence_integrity": integrity,
-        "target": target,
+        "target": redact_text(target),
     }
     markdown = render_markdown(
         run_id=run_id,
@@ -334,7 +392,7 @@ def run_observation(
             {
                 "run_id": run_id,
                 "stage": "M1",
-                "target": target,
+                "target": redact_text(target),
                 "engagement": engagement.id,
                 "findings": len(findings),
                 "validated": sum(

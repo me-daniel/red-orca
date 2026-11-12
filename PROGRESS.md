@@ -94,6 +94,14 @@ local Claude/Codex CLIs, and the local lab fixture.
   rationale, and severity-change conditions.
 - Report rendering now prefers captured reproduction over later prose, fences
   target-controlled request/response text safely, and prints the coverage ledger.
+- Reproduction requests/responses are redacted before Markdown and JSON export.
+  A reproduction is labelled **captured** only when every step links to a real
+  HTTP exchange and evidence record, with matching method, target, and stored
+  request/response text; otherwise it is labelled **unverified**. JSON export
+  carries `reproduction_verified`.
+- `no_issue_found` coverage requires evidence IDs that exist in the run's
+  verified evidence store. Machine-observed entries are constructed only by the
+  runtime coverage ledger; `CoverageEntry` is fixed to `agent`.
 - Deliberately not copied: AntiFox's missing scope layer, fail-open traffic
   capture, or AGPL code; Strix's full Kali tool fleet and agent SDK. Engines stay
   optional adapters.

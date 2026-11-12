@@ -88,6 +88,45 @@ def redact_set_cookie(value: str) -> str:
     return f"{name}=<redacted>" + (f"; {'; '.join(flags)}" if flags else "")
 
 
+def redact_http_text(text: str) -> str:
+    """Redact secrets in a raw HTTP request/response before storage or export.
+
+    Header values are handled by name, because a bearer token after
+    ``Authorization:`` would otherwise lose only the word ``Bearer``. Bodies use
+    the same patterns as stored evidence. Line endings are normalised to ``\\n``.
+    """
+    if not text:
+        return text
+    head, body = text, ""
+    for separator in ("\r\n\r\n", "\n\n"):
+        if separator in text:
+            head, body = text.split(separator, 1)
+            break
+    lines: list[str] = []
+    for index, line in enumerate(head.splitlines()):
+        if not line.strip():
+            lines.append(line)
+            continue
+        if index == 0:
+            lines.append(redact_text(line))
+            continue
+        name, separator, value = line.partition(":")
+        if separator and name.strip():
+            lowered = name.strip().lower()
+            if lowered == "set-cookie":
+                lines.append(f"{name}: {redact_set_cookie(value.strip())}")
+            elif lowered in SECRET_HEADERS:
+                lines.append(f"{name}: <redacted>")
+            else:
+                lines.append(f"{name}: {redact_text(value.strip())}")
+        else:
+            lines.append(redact_text(line))
+    redacted = "\n".join(lines)
+    if body:
+        redacted += "\n\n" + redact_text(body)
+    return redacted
+
+
 @dataclass
 class EvidenceRecord:
     id: str
@@ -99,6 +138,8 @@ class EvidenceRecord:
     request_body: str = ""
     response_headers: dict[str, str] = field(default_factory=dict)
     body: str = ""
+    request_text: str = ""
+    response_text: str = ""
     body_sha256: str = ""
     body_bytes: int = 0
     truncated: bool = False
@@ -118,12 +159,15 @@ class EvidenceRecord:
             "request_body": self.request_body,
             "response_headers": self.response_headers,
             "body": self.body,
+            "request_text": self.request_text,
+            "response_text": self.response_text,
             "body_sha256": self.body_sha256,
             "body_bytes": self.body_bytes,
             "truncated": self.truncated,
             "captured_at": self.captured_at,
             "source": self.source,
             "notes": self.notes,
+            "exchange_id": self.id if self.kind == "http" else "",
         }
         data["record_sha256"] = _sha256_text(
             json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -165,6 +209,8 @@ class EvidenceStore:
         request_body: str = "",
         response_headers: dict[str, str] | None = None,
         body: bytes | str = b"",
+        request_text: str = "",
+        response_text: str = "",
         source: str = "",
         notes: dict[str, Any] | None = None,
         evidence_id: str | None = None,
@@ -176,11 +222,7 @@ class EvidenceStore:
         text = stored.decode("utf-8", errors="replace")
         if evidence_id is not None and not _EVIDENCE_ID.match(evidence_id):
             raise ValueError(f"invalid evidence id: {evidence_id!r}")
-        raw = body.encode("utf-8") if isinstance(body, str) else body
-        truncated = truncated or len(raw) > _MAX_BODY_BYTES
-        stored = raw[:_MAX_BODY_BYTES]
-        text = stored.decode("utf-8", errors="replace")
-        request_text = request_body[:_MAX_BODY_BYTES]
+        request_body_text = request_body[:_MAX_BODY_BYTES]
         record = EvidenceRecord(
             id=evidence_id or self.next_id(),
             kind=kind,
@@ -188,9 +230,11 @@ class EvidenceStore:
             method=method,
             status=status,
             request_headers=redact_headers(dict(request_headers or {})),
-            request_body=redact_text(request_text),
+            request_body=redact_text(request_body_text),
             response_headers=redact_headers(dict(response_headers or {})),
             body=redact_text(text),
+            request_text=redact_http_text(request_text),
+            response_text=redact_http_text(response_text),
             body_sha256=_sha256_bytes(stored),
             body_bytes=len(raw),
             truncated=truncated,
@@ -227,6 +271,15 @@ class EvidenceStore:
             raise KeyError(f"no evidence {evidence_id}")
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         return data
+
+    def has(self, evidence_id: str) -> bool:
+        if not _EVIDENCE_ID.match(evidence_id):
+            return False
+        return (self.dir / f"{evidence_id}.json").exists()
+
+    def exchanges(self) -> list[dict[str, Any]]:
+        """HTTP records are the run's verified exchange index."""
+        return [item for item in self.records() if item.get("kind") == "http"]
 
     def verify(self) -> list[str]:
         """Return integrity problems; empty means every record matches its hash.

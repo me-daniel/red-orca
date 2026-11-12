@@ -12,7 +12,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from ..domain import Confidence, Finding, FindingState, Severity
+from ..domain import Confidence, Finding, FindingState, Reproduction, ReproStep, Severity
 from ..evidence import EvidenceRecord
 
 CHECK_VERSION = "1"
@@ -50,6 +50,25 @@ def _finding(
     now: float | None = None,
 ) -> Finding:
     parts = urlsplit(record.url)
+    entry_target = parts.path or "/"
+    if parts.query:
+        entry_target += "?" + parts.query
+    reproduction_detail = None
+    if record.request_text and record.response_text:
+        reproduction_detail = Reproduction(
+            entry_point=f"{record.method} {entry_target}",
+            steps=[
+                ReproStep(
+                    request=record.request_text,
+                    response=record.response_text,
+                    expected=summary or title,
+                    proves=summary or title,
+                    exchange_id=record.id,
+                    evidence_ids=[record.id],
+                )
+            ],
+            provenance=f"{check_id} v{CHECK_VERSION} from {record.source or 'capture'}",
+        )
     return Finding(
         id="",
         title=title,
@@ -65,6 +84,7 @@ def _finding(
         summary=summary or title,
         detail=detail,
         reproduction=reproduction or [],
+        reproduction_detail=reproduction_detail,
         impact=impact,
         limitations=limitations or [],
         remediation=remediation,

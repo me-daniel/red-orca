@@ -107,14 +107,37 @@ class PassiveHttpAdapter(BaseAdapter):
                 self.failures.append(f"GET {current}: {type(exc).__name__}")
                 return records
 
+            parts = urlsplit(current)
+            request_headers = {
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html,*/*",
+                "Host": target.host_header,
+            }
+            target_path = parts.path or "/"
+            if parts.query:
+                target_path += "?" + parts.query
+            request_text = (
+                f"GET {target_path} HTTP/1.1\n"
+                + "\n".join(f"{name}: {value}" for name, value in request_headers.items())
+                + "\n\n"
+            )
+            reason = response.reason_phrase or ""
+            response_text = (
+                f"HTTP/1.1 {response.status_code} {reason}\n"
+                + "\n".join(f"{name}: {value}" for name, value in response.headers.items())
+                + "\n\n"
+                + body.decode("utf-8", errors="replace")
+            )
             record = self.store.capture(
                 kind="http",
                 url=current,
                 method="GET",
                 status=response.status_code,
-                request_headers={"User-Agent": USER_AGENT, "Accept": "text/html,*/*"},
+                request_headers=request_headers,
                 response_headers=dict(response.headers.items()),
                 body=body,
+                request_text=request_text,
+                response_text=response_text,
                 truncated=size_capped,
                 source=self.name,
                 notes={

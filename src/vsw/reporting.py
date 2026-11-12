@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from .domain import Coverage, Finding, FindingState
+from .reproduction import (
+    redact_export_payload,
+    redact_reproduction,
+    verify_reproduction,
+)
 
 _MD_ACTIVE = str.maketrans(
     {
@@ -55,21 +61,30 @@ def _md_code(text: object, limit: int = 8000) -> str:
     return f"{fence}text\n{value}\n{fence}"
 
 
-def _repro_lines(finding: Finding) -> list[str]:
+def _repro_lines(finding: Finding, records: Mapping[str, dict[str, Any]]) -> list[str]:
     """Prefer captured reproduction over later prose or a rewritten PoC."""
     detail = finding.reproduction_detail
     if detail is not None and (
         detail.entry_point or detail.prerequisites or detail.steps or detail.provenance
     ):
-        lines = ["Reproduction (captured):"]
-        if detail.provenance:
-            lines.append(f"- Origin: {_md(detail.provenance, 300)}")
-        if detail.entry_point:
-            lines.append(f"- Entry point: {_md(detail.entry_point, 300)}")
-        if detail.prerequisites:
+        redacted = redact_reproduction(detail)
+        check = verify_reproduction(redacted, records)
+        if check.verified:
+            lines = ["Reproduction (captured):"]
+        else:
+            lines = ["Reproduction (unverified):"]
+            lines.append(
+                "- Links did not verify: "
+                + "; ".join(_md(error, 200) for error in check.errors[:3])
+            )
+        if redacted.provenance:
+            lines.append(f"- Origin: {_md(redacted.provenance, 300)}")
+        if redacted.entry_point:
+            lines.append(f"- Entry point: {_md(redacted.entry_point, 300)}")
+        if redacted.prerequisites:
             lines.append("- Prerequisites:")
-            lines += [f"  - {_md(item, 300)}" for item in detail.prerequisites]
-        for index, step in enumerate(detail.steps, start=1):
+            lines += [f"  - {_md(item, 300)}" for item in redacted.prerequisites]
+        for index, step in enumerate(redacted.steps, start=1):
             summary: list[str] = []
             if step.expected:
                 summary.append(f"expected: {_md(step.expected, 300)}")
@@ -114,6 +129,9 @@ def render_markdown(
     for finding in findings:
         counts[finding.state.value] = counts.get(finding.state.value, 0) + 1
     validated = counts.get(FindingState.VALIDATED.value, 0)
+    record_index = {
+        str(item["id"]): item for item in evidence if item.get("id")
+    }
 
     lines: list[str] = [
         f"# vsw observation report — {_md(run_id, 80)}",
@@ -179,15 +197,17 @@ def render_markdown(
             "",
             "### Coverage ledger",
             "",
-            "| Surface | Risk area | Outcome | Source | Evidence |",
-            "| --- | --- | --- | --- | --- |",
+            "| Surface | Risk area | Outcome | Source | Evidence IDs | Evidence |",
+            "| --- | --- | --- | --- | --- | --- |",
         ]
         for entry in coverage.entries:
+            evidence_ids = ", ".join(entry.evidence_ids) or "-"
             lines.append(
                 f"| {_md(entry.surface, 80)} "
                 f"| {_md(entry.risk_area, 80)} "
                 f"| {entry.outcome.value} "
                 f"| {_md(entry.source, 20)} "
+                f"| {_md(evidence_ids, 80)} "
                 f"| {_md(entry.evidence, 160)} |"
             )
 
@@ -228,7 +248,7 @@ def render_markdown(
                 "",
             ]
             if finding.reproduction or finding.reproduction_detail:
-                lines += _repro_lines(finding)
+                lines += _repro_lines(finding, record_index)
             lines += [
                 f"- Observed impact: {_md(finding.impact or 'none demonstrated', 300)}",
                 f"- Remediation: {_md(finding.remediation or 'n/a', 300)}",
@@ -329,8 +349,9 @@ def write_report(
     run_dir = run_dir.resolve()
     md_path = _safe(run_dir, "report.md")
     json_path = _safe(run_dir, "findings.json")
+    safe_payload = redact_export_payload(payload)
     md_path.write_text(markdown, encoding="utf-8")
-    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    json_path.write_text(json.dumps(safe_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return md_path, json_path
 
 

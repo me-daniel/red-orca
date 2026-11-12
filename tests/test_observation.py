@@ -136,3 +136,51 @@ def test_passive_http_connects_to_the_checked_address(tmp_path, manifest, lab_se
     assert records
     assert records[0].status == 200
     assert records[0].notes["peer"] == "127.0.0.1"
+
+
+def test_reproduction_is_captured_and_redacted_end_to_end(tmp_path, manifest, lab_server):
+    secret = "vsw-topsecret-token"
+    target = (
+        f"{lab_server}/vuln/echo?q=%3Cb%3Evsw-marker-3%3C%2Fb%3E&token={secret}"
+    )
+    report = run_observation(manifest(), target, use_browser=False, root=tmp_path)
+    assert report["status"] == "pass"
+    evidence_ids = {item["id"] for item in report["evidence"]}
+    findings = {item["check_id"]: item for item in report["findings"]}
+    finding = findings["reflection.q"]
+    assert finding["reproduction_verified"] is True
+    detail = finding["reproduction_detail"]
+    step = detail["steps"][0]
+    assert step["exchange_id"] in evidence_ids
+    assert step["exchange_id"] == step["evidence_ids"][0]
+    assert "GET /vuln/echo" in step["request"]
+    assert "HTTP/1.1 200" in step["response"]
+
+    run_dir = Path(report["run_dir"])
+    markdown = (run_dir / "report.md").read_text(encoding="utf-8")
+    exported = (run_dir / "findings.json").read_text(encoding="utf-8")
+    assert "Reproduction (captured):" in markdown
+    assert secret not in markdown
+    assert secret not in exported
+    assert "<redacted>" in markdown
+    assert "<redacted>" in exported
+
+
+def test_runtime_records_machine_coverage_with_valid_evidence(tmp_path, manifest, lab_server):
+    report = run_observation(manifest(), f"{lab_server}/clean/", use_browser=False, root=tmp_path)
+    assert report["status"] == "pass"
+    evidence_ids = {item["id"] for item in report["evidence"]}
+    machine = [
+        entry for entry in report["coverage"]["entries"] if entry["source"] == "machine"
+    ]
+    assert machine
+    clean = [entry for entry in machine if entry["outcome"] == "no_issue_found"]
+    assert clean
+    for entry in clean:
+        assert entry["evidence_ids"]
+        assert set(entry["evidence_ids"]) <= evidence_ids
+
+    markdown = Path(report["run_dir"], "report.md").read_text(encoding="utf-8")
+    assert "### Coverage ledger" in markdown
+    assert "| machine |" in markdown
+    assert "| no_issue_found |" in markdown

@@ -161,23 +161,27 @@ class CoverageOutcome(str, Enum):
     NEEDS_FOLLOW_UP = "needs_follow_up"
 
 
-class CoverageEntry(BaseModel):
-    """One surface/risk-area result, distinct from machine-observed coverage.
+class CoverageRecord(BaseModel):
+    """One surface/risk-area result.
 
-    `source` records whether an agent claimed this result or the runtime
-    observed it. Reports must keep the two apart.
+    `source` records whether an agent claimed the result or the runtime observed
+    it. Agents construct `CoverageEntry` (source fixed to `agent`); only the
+    runtime module constructs the machine-observed subclass.
     """
 
     surface: str = Field(min_length=1)
     risk_area: str = Field(min_length=1)
     outcome: CoverageOutcome
     evidence: str = ""
+    evidence_ids: list[str] = Field(default_factory=list)
     source: Literal["agent", "machine"] = "agent"
     agent: str = ""
     recorded_at: str = ""
 
     @model_validator(mode="after")
-    def _negative_outcomes_need_evidence(self) -> CoverageEntry:
+    def _negative_outcomes_need_evidence(self) -> CoverageRecord:
+        if self.outcome == CoverageOutcome.NO_ISSUE_FOUND and not self.evidence_ids:
+            raise ValueError("outcome 'no_issue_found' requires evidence_ids")
         if self.outcome in {
             CoverageOutcome.RULED_OUT,
             CoverageOutcome.NOT_APPLICABLE,
@@ -185,6 +189,12 @@ class CoverageEntry(BaseModel):
         } and not self.evidence.strip():
             raise ValueError(f"outcome {self.outcome.value!r} requires evidence")
         return self
+
+
+class CoverageEntry(CoverageRecord):
+    """Agent-reported coverage. The source cannot be set by the caller."""
+
+    source: Literal["agent"] = "agent"
 
 
 class ReproStep(BaseModel):
@@ -251,6 +261,6 @@ class Coverage(BaseModel):
     request_limit: int = 0
     truncated_pages: list[str] = Field(default_factory=list)
     skipped: list[dict[str, str]] = Field(default_factory=list)
-    entries: list[CoverageEntry] = Field(default_factory=list)
+    entries: list[CoverageRecord] = Field(default_factory=list)
     stop_reason: str = ""
     adapters: list[dict[str, object]] = Field(default_factory=list)

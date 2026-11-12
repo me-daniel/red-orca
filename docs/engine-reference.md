@@ -176,6 +176,18 @@ The first implementation slice does not need Docker or a live model:
   ledger;
 - tests for fence breakout, coverage provenance, and step ordering.
 
+Export and runtime rules now enforced:
+
+- reproduction request/response text is redacted before both Markdown and JSON
+  export, even when the links do not verify;
+- an HTTP capture stores its request and response text, and a reproduction step
+  must link a real exchange id and evidence ids with matching method, target,
+  and stored text before it is labelled **captured**;
+- `no_issue_found` coverage requires evidence ids that exist in the run's
+  verified evidence store;
+- `CoverageEntry` is fixed to `agent`; only the runtime coverage ledger can
+  construct a `MachineCoverageEntry`.
+
 The engine adapter contract, traffic recorder, and SARIF writer follow after the
 native evidence model is stable. AntiFox remains the first adapter to integrate;
 Strix remains the comparison engine.
