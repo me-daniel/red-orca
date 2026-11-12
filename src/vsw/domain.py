@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Phase(str, Enum):
@@ -150,6 +151,62 @@ class CheckPlan(BaseModel):
     cleanup: str = "none"
 
 
+class CoverageOutcome(str, Enum):
+    """How a tested surface closed."""
+
+    REPORTED = "reported"
+    NO_ISSUE_FOUND = "no_issue_found"
+    RULED_OUT = "ruled_out"
+    NOT_APPLICABLE = "not_applicable"
+    NEEDS_FOLLOW_UP = "needs_follow_up"
+
+
+class CoverageEntry(BaseModel):
+    """One surface/risk-area result, distinct from machine-observed coverage.
+
+    `source` records whether an agent claimed this result or the runtime
+    observed it. Reports must keep the two apart.
+    """
+
+    surface: str = Field(min_length=1)
+    risk_area: str = Field(min_length=1)
+    outcome: CoverageOutcome
+    evidence: str = ""
+    source: Literal["agent", "machine"] = "agent"
+    agent: str = ""
+    recorded_at: str = ""
+
+    @model_validator(mode="after")
+    def _negative_outcomes_need_evidence(self) -> CoverageEntry:
+        if self.outcome in {
+            CoverageOutcome.RULED_OUT,
+            CoverageOutcome.NOT_APPLICABLE,
+            CoverageOutcome.NEEDS_FOLLOW_UP,
+        } and not self.evidence.strip():
+            raise ValueError(f"outcome {self.outcome.value!r} requires evidence")
+        return self
+
+
+class ReproStep(BaseModel):
+    """One ordered, verbatim step captured when a finding was recorded."""
+
+    request: str = ""
+    response: str = ""
+    expected: str = ""
+    proves: str = ""
+    exchange_id: str = ""
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class Reproduction(BaseModel):
+    """In-situ reproduction captured with a finding, not reconstructed later."""
+
+    entry_point: str = ""
+    prerequisites: list[str] = Field(default_factory=list)
+    steps: list[ReproStep] = Field(default_factory=list)
+    provenance: str = ""
+
+
 class Finding(BaseModel):
     """Normalized finding shared by every adapter."""
 
@@ -163,11 +220,21 @@ class Finding(BaseModel):
     confidence: Confidence
     state: FindingState
     weakness_ref: str = ""
+    cwe: str = ""
+    cvss_score: float | None = None
+    cvss_vector: str = ""
     evidence_ids: list[str] = Field(default_factory=list)
+    exchange_ids: list[str] = Field(default_factory=list)
     summary: str = ""
     detail: str = ""
     reproduction: list[str] = Field(default_factory=list)
+    reproduction_detail: Reproduction | None = None
     impact: str = ""
+    assumptions: list[str] = Field(default_factory=list)
+    counterevidence: list[str] = Field(default_factory=list)
+    confidence_rationale: str = ""
+    severity_change_conditions: list[str] = Field(default_factory=list)
+    code_locations: list[dict[str, object]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     remediation: str = ""
     regression_recipe: list[str] = Field(default_factory=list)
@@ -184,5 +251,6 @@ class Coverage(BaseModel):
     request_limit: int = 0
     truncated_pages: list[str] = Field(default_factory=list)
     skipped: list[dict[str, str]] = Field(default_factory=list)
+    entries: list[CoverageEntry] = Field(default_factory=list)
     stop_reason: str = ""
     adapters: list[dict[str, object]] = Field(default_factory=list)

@@ -82,6 +82,22 @@ local Claude/Codex CLIs, and the local lab fixture.
   policy, not through this gateway. They use the Codex CLI's ChatGPT login and
   are not exercised in this build.
 
+## Engine reference review (AntiFox, Strix)
+
+- Read-only study of AntiFox `070f798` (AGPL-3.0) and Strix `0111915`
+  (`strix-agent` 1.7.1, Apache-2.0). Notes and licensing boundary live in
+  `docs/engine-reference.md`. No upstream code or prompt text was copied.
+- Adopted natively: in-situ reproduction (`entry_point`, prerequisites, ordered
+  verbatim request/response steps, provenance), traffic/exchange ids, a coverage
+  ledger that keeps agent-reported and machine-observed provenance separate, and
+  finding fields for CWE/CVSS, assumptions, counterevidence, confidence
+  rationale, and severity-change conditions.
+- Report rendering now prefers captured reproduction over later prose, fences
+  target-controlled request/response text safely, and prints the coverage ledger.
+- Deliberately not copied: AntiFox's missing scope layer, fail-open traffic
+  capture, or AGPL code; Strix's full Kali tool fleet and agent SDK. Engines stay
+  optional adapters.
+
 ## Live, mocked, blocked
 
 | Item | State |

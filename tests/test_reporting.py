@@ -2,7 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from vsw.domain import Coverage, Finding, FindingState, Severity
+from vsw.domain import (
+    Coverage,
+    CoverageEntry,
+    CoverageOutcome,
+    Finding,
+    FindingState,
+    Reproduction,
+    ReproStep,
+    Severity,
+)
 from vsw.reporting import _safe, render_markdown, write_report
 
 
@@ -27,7 +36,11 @@ def finding(**overrides) -> Finding:
     return Finding(**data)
 
 
-def render(findings: list[Finding], skipped: list[dict[str, str]] | None = None) -> str:
+def render(
+    findings: list[Finding],
+    skipped: list[dict[str, str]] | None = None,
+    coverage_entries: list[CoverageEntry] | None = None,
+) -> str:
     return render_markdown(
         run_id="obs-test",
         engagement={
@@ -50,6 +63,7 @@ def render(findings: list[Finding], skipped: list[dict[str, str]] | None = None)
             requests_made=2,
             request_limit=10,
             skipped=skipped or [],
+            entries=coverage_entries or [],
             stop_reason="",
         ),
         evidence=[
@@ -114,3 +128,73 @@ def test_write_report_stays_inside_the_run(tmp_path: Path):
     assert md == tmp_path.resolve() / "report.md"
     assert payload.exists()
     assert (tmp_path / "report.md").read_text() == "# hi\n"
+
+
+def test_captured_reproduction_prefers_structured_steps_and_safe_fences():
+    repro = Reproduction(
+        entry_point="GET /vuln/echo?q=...",
+        prerequisites=["register a test account"],
+        provenance="manual check",
+        steps=[
+            ReproStep(
+                request="GET /vuln/echo?q=``` HTTP/1.1\nHost: lab",
+                response="HTTP/1.1 200 OK\n\n<script>alert(1)</script>",
+                expected="200 with reflection",
+                proves="the parameter is reflected",
+                exchange_id="X-1",
+                evidence_ids=["E-001"],
+            ),
+            ReproStep(
+                request="GET /vuln/other HTTP/1.1",
+                response="HTTP/1.1 404 Not Found",
+                expected="404",
+                proves="scope stays on the path",
+            ),
+        ],
+    )
+    markdown = render(
+        [finding(reproduction_detail=repro, reproduction=["AI-reconstructed step"])]
+    )
+    assert "Reproduction (captured):" in markdown
+    assert "AI-reconstructed step" not in markdown
+    assert "Entry point: GET /vuln/echo?q=..." in markdown
+    assert "register a test account" in markdown
+    assert "GET /vuln/echo?q=``` HTTP/1.1" in markdown
+    # three backticks in the request force a four-backtick fence
+    assert "````text" in markdown
+    assert "Exchange: `X-1`" in markdown
+    assert markdown.index("Step 1") < markdown.index("Step 2")
+
+
+def test_coverage_ledger_shows_source_and_outcome():
+    entries = [
+        CoverageEntry(
+            surface="/vuln/echo",
+            risk_area="reflected input",
+            outcome=CoverageOutcome.NO_ISSUE_FOUND,
+            source="agent",
+            agent="worker-1",
+            evidence="parameterized output",
+        ),
+        CoverageEntry(
+            surface="/admin",
+            risk_area="authorization",
+            outcome=CoverageOutcome.NEEDS_FOLLOW_UP,
+            source="machine",
+            evidence="not exercised in this run",
+        ),
+    ]
+    markdown = render([], coverage_entries=entries)
+    assert "### Coverage ledger" in markdown
+    assert "| Surface | Risk area | Outcome | Source | Evidence |" in markdown
+    assert "| /vuln/echo | reflected input | no_issue_found | agent |" in markdown
+    assert "| /admin | authorization | needs_follow_up | machine |" in markdown
+
+
+def test_negative_coverage_requires_evidence():
+    with pytest.raises(ValueError, match="requires evidence"):
+        CoverageEntry(
+            surface="/admin",
+            risk_area="authorization",
+            outcome=CoverageOutcome.RULED_OUT,
+        )

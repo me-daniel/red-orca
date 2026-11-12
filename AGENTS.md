@@ -5,6 +5,7 @@ Requirements live in these files. Read only the one that owns the topic.
 - `OPENCODE_BUILD_BRIEF.md` — product, integrations, contracts, scope, milestones
 - `MODEL_ROUTING.md` — build-time delegates, effort, budgets, review
 - `RED_MODEL_ROUTING.md` — assessment-time model roles (later cyber runs)
+- `docs/engine-reference.md` — AntiFox/Strix behaviour study; no upstream code reuse
 
 ## Commands
 
