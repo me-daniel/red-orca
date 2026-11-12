@@ -59,7 +59,11 @@ def test_assessment_rejects_out_of_scope_plan_seed_and_unknown_triage(
             "plan": """```json
             {
               "focus": ["scope"],
-              "seeds": ["http://127.0.0.2/", "TARGET"],
+              "seeds": [
+                "http://127.0.0.2/",
+                "http://127.0.0.1:8787/vuln/<redacted>",
+                "TARGET"
+              ],
               "checks": ["passive-http"],
               "notes": "test plan"
             }
@@ -87,7 +91,10 @@ def test_assessment_rejects_out_of_scope_plan_seed_and_unknown_triage(
         gateway=gateway,
     )
     assert report["plan"]["seeds"] == [target]
-    assert [item["seed"] for item in report["plan_rejected_seeds"]] == ["http://127.0.0.2/"]
+    assert [item["seed"] for item in report["plan_rejected_seeds"]] == [
+        "http://127.0.0.2/",
+        "http://127.0.0.1:8787/vuln/<redacted>",
+    ]
     assert report["unknown_finding_ids"] == ["F-999"]
     assert report["unmentioned_finding_ids"]
     assert len(report["model_calls"]) == 2

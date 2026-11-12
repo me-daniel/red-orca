@@ -144,6 +144,9 @@ def _validate_plan(
     rejected: list[dict[str, str]] = []
     seeds: list[str] = []
     for raw in plan.seeds[: MAX_PLAN_SEEDS * 2]:
+        if "<redacted>" in raw.lower():
+            rejected.append({"seed": raw[:300], "reason": "seed contains redacted text"})
+            continue
         seed = _normalise_seed(raw, target)
         if not seed:
             rejected.append({"seed": raw[:300], "reason": "not an absolute http(s) URL"})
@@ -398,7 +401,7 @@ def run_assessment(
     if mode == "mock":
         plan = _mock_plan(target, use_browser)
     else:
-        plan_prompt = _plan_prompt(engagement, target)
+        plan_prompt = _plan_prompt(engagement, redact_text(target))
         response: ModelResponse | None = None
         if gateway is not None:
             response, call = _call(
