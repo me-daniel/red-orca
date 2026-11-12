@@ -73,9 +73,10 @@ local Claude/Codex CLIs, and the local lab fixture.
 - Live checks on 2026-11-12 (connectivity and accounting only, not fixture
   evaluations): Go `triage`, `kimi`, and `hy4`; OpenRouter `plan-openrouter`,
   `triage-openrouter`, `luna`, `sol`, and `gemini` returned usage and a measured
-  cost or allowance. Go `plan` was refused because DeepSeek needs Global regions
-  in the Console privacy settings; `plan-openrouter` is the explicit fallback
-  until that changes.
+  cost or allowance. Go `plan` was initially refused because DeepSeek needed
+  Global regions in the Console privacy settings; after the workspace region was
+  set to Global, `vsw models check plan` returned usage and a Go allowance.
+  `plan-openrouter` remains the explicit fallback.
 
 ## Live, mocked, blocked
 
@@ -103,8 +104,9 @@ local Claude/Codex CLIs, and the local lab fixture.
 - Runtime routes are disabled by default. Enabling one requires a successful
   `vsw models check` and the labelled fixture comparison in `RED_MODEL_ROUTING.md`;
   a connectivity check alone is not an evaluation.
-- Go DeepSeek requires Global regions in the Console privacy settings. Until that
-  is set, `plan` fails closed and `plan-openrouter` is the explicit fallback.
+- Go DeepSeek requires Global regions in the Console privacy settings. If a
+  workspace is not set to Global, `plan` fails closed; use `plan-openrouter` as
+  the evaluated fallback.
 - Go chat completions cannot represent the unified reasoning effort for
   Responses-native Luna and Gemini, so those routes use OpenRouter. Sending the
   field to Go returns a provider error rather than a silent downgrade.

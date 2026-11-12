@@ -51,9 +51,10 @@ OpenAI-compatible chat completions at
 
 Provider limits that affect a route:
 
-- Go DeepSeek requires **Global** regions in the Console privacy settings. Until
-  that is set, use `plan-openrouter` for an evaluated comparison; do not treat a
-  region refusal as a model failure.
+- Go DeepSeek requires **Global** regions in the Console privacy settings. If a
+  workspace is not set to Global, `plan` fails closed; use `plan-openrouter` for
+  an evaluated comparison rather than treating the region refusal as a model
+  failure.
 - Go chat completions accept the unified `reasoning: {effort}` field for the
   open models used here. They reject it for the Responses-native Luna and
   Gemini models, so those routes use OpenRouter, which accepts it.
