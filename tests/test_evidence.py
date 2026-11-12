@@ -153,3 +153,11 @@ def test_indexed_but_missing_record_is_detected(tmp_path):
         path.unlink()
     problems = evidence.verify()
     assert any(record.id in item and "missing" in item for item in problems)
+
+
+def test_unreadable_record_is_detected_without_crashing(tmp_path):
+    evidence = store(tmp_path)
+    record = evidence.capture(kind="http", url="u1", status=200, body="a")
+    (evidence.dir / f"{record.id}.json").write_text("{broken", encoding="utf-8")
+    assert any("unreadable record" in item for item in evidence.verify())
+    assert evidence.exchanges() == []

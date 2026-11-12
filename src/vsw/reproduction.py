@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .domain import Finding, Reproduction, ReproStep
-from .evidence import redact_http_text, redact_text
+from .evidence import redact_http_text, redact_text, redact_value
 
 _REQUEST_LINE = re.compile(r"^([A-Z]+)\s+(\S+)(?:\s+HTTP/\S+)?\s*$")
 
@@ -147,7 +147,7 @@ def finding_export(
     finding: Finding, records: Mapping[str, dict[str, Any]]
 ) -> dict[str, Any]:
     """JSON-ready finding with reproduction redacted and link status explicit."""
-    data = finding.model_dump(mode="json")
+    data: dict[str, Any] = redact_value(finding.model_dump(mode="json"))
     detail = finding.reproduction_detail
     if detail is None:
         data["reproduction_verified"] = False

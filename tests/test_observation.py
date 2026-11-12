@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -5,7 +6,95 @@ import pytest
 
 from vsw.evidence import EvidenceStore
 from vsw.orchestrator import run_observation
-from vsw.scope import ScopeDenied
+from vsw.scope import ScopeDenied, approve_manifest
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_run_artifacts_from_mock_capture_without_sockets(tmp_path, monkeypatch, tamper):
+    """Exercise orchestration and real analysis with a deterministic local capture mock."""
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+
+    manifest_path = tmp_path / "engagement.yaml"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "id": "mock-fixture",
+                "owner": "tester",
+                "approver": "tester",
+                "authorization_ref": "secret=authsecret",
+                "expires_at": "2030-01-01T00:00:00Z",
+                "origins": ["http://127.0.0.1:8787"],
+                "path_prefixes": ["/vuln"],
+            }
+        )
+    )
+    approve_manifest(manifest_path, "tester")
+
+    def capture(self, plan):
+        url = plan.destinations[0]
+        self.guard.authorize(url, "GET")
+        parts = urlsplit(url)
+        request = f"GET {parts.path}?{parts.query} HTTP/1.1\nHost: 127.0.0.1:8787\n\n"
+        body = "<html><b>vsw-marker-mock</b></html>"
+        record = self.store.capture(
+            kind="http",
+            url=url,
+            status=200,
+            response_headers={"Content-Type": "text/html"},
+            body=body,
+            request_text=request,
+            response_text=f"HTTP/1.1 200 OK\nContent-Type: text/html\n\n{body}",
+            source=self.name,
+            notes={"content_type": "text/html"},
+        )
+        if tamper:
+            path = self.store.dir / f"{record.id}.json"
+            path.write_text(path.read_text().replace("vsw-marker-mock", "forged-marker"))
+        return [record]
+
+    monkeypatch.setattr(PassiveHttpAdapter, "execute", capture)
+    target = (
+        "http://127.0.0.1:8787/vuln/echo?"
+        "q=%3Cb%3Evsw-marker-mock%3C%2Fb%3E&token=topsecret"
+    )
+    report = run_observation(manifest_path, target, use_browser=False, root=tmp_path)
+    run_dir = Path(report["run_dir"])
+    assert {item["check_id"] for item in report["findings"]} >= {"reflection.q"}
+    assert json.loads((run_dir / "findings.json").read_text()) == {
+        key: value for key, value in report.items() if key != "run_dir"
+    }
+    assert json.loads((run_dir / "coverage.json").read_text()) == report["coverage"]
+    run_summary = json.loads((run_dir / "run.json").read_text())
+    assert run_summary["status"] == report["status"]
+    assert run_summary["findings"] == len(report["findings"])
+    for name in ("report.md", "findings.json", "coverage.json", "exchanges.json", "run.json"):
+        contents = (run_dir / name).read_text()
+        assert "topsecret" not in contents
+        assert "authsecret" not in contents
+    if tamper:
+        assert report["status"] == "fail"
+        assert report["evidence"] == []
+        assert all(item["state"] == "inconclusive" for item in report["findings"])
+        assert all(not item["reproduction_verified"] for item in report["findings"])
+        assert json.loads((run_dir / "exchanges.json").read_text())["exchanges"] == []
+        assert run_summary["validated"] == 0
+        assert all(
+            entry["outcome"] == "needs_follow_up" and not entry["evidence_ids"]
+            for entry in report["coverage"]["entries"]
+        )
+    else:
+        assert report["status"] == "pass"
+        assert report["evidence_integrity"] == []
+        assert next(item for item in report["findings"] if item["check_id"] == "reflection.q")[
+            "reproduction_verified"
+        ] is True
+        exchange = json.loads((run_dir / "exchanges.json").read_text())["exchanges"][0]
+        assert exchange["exchange_id"] == exchange["evidence_id"] == report["evidence"][0]["id"]
+        assert exchange["record_sha256"] == report["evidence"][0]["record_sha256"]
+        assert "request_text" not in exchange
+        assert run_summary["validated"] == sum(
+            item["state"] == "validated" for item in report["findings"]
+        )
 
 
 def test_vulnerable_reflection_is_validated_with_evidence(tmp_path, manifest, lab_server):
@@ -27,6 +116,20 @@ def test_vulnerable_reflection_is_validated_with_evidence(tmp_path, manifest, la
     assert "Validated findings: **1**" in markdown
     assert "## Untested areas and limits" in markdown
     assert EvidenceStore(run_dir).verify() == []
+    exported = json.loads((run_dir / "findings.json").read_text(encoding="utf-8"))
+    assert exported["findings"] == report["findings"]
+    assert json.loads((run_dir / "coverage.json").read_text()) == report["coverage"]
+    run = json.loads((run_dir / "run.json").read_text())
+    assert (run["status"], run["findings"], run["validated"]) == (
+        report["status"], len(report["findings"]), len(validated)
+    )
+    exchanges = json.loads((run_dir / "exchanges.json").read_text())["exchanges"]
+    evidence_by_id = {item["id"]: item for item in report["evidence"]}
+    assert exchanges
+    assert {item["exchange_id"] for item in exchanges} == {
+        item["id"] for item in report["evidence"] if item["kind"] == "http"
+    }
+    assert all(item["record_sha256"] == evidence_by_id[item["evidence_id"]]["record_sha256"] for item in exchanges)
 
 
 def test_clean_control_produces_no_findings(tmp_path, manifest, lab_server):
@@ -80,6 +183,11 @@ def test_request_limit_stops_the_crawl(tmp_path, manifest, lab_server):
     report = run_observation(path, f"{lab_server}/vuln/", use_browser=False, root=tmp_path)
     assert report["coverage"]["requests_made"] <= 1
     assert report["coverage"]["stop_reason"] in {"request limit reached", ""}
+    if report["coverage"]["stop_reason"]:
+        assert report["status"] == "partial"
+        assert all(
+            entry["outcome"] != "no_issue_found" for entry in report["coverage"]["entries"]
+        )
 
 
 def test_https_target_cannot_pass_as_a_completed_run(tmp_path, manifest):
@@ -107,6 +215,10 @@ def test_missing_browser_reports_partial_coverage(tmp_path, manifest, lab_server
     adapters = {item["adapter"]: item for item in report["adapters"]}
     assert adapters["passive-http"]["status"] == "completed"
     assert adapters["browser"]["status"] == "unavailable"
+    assert any(
+        entry["agent"] == "browser" and entry["outcome"] == "needs_follow_up"
+        for entry in report["coverage"]["entries"]
+    )
 
 
 def test_passive_http_connects_to_the_checked_address(tmp_path, manifest, lab_server, monkeypatch):
@@ -164,6 +276,8 @@ def test_reproduction_is_captured_and_redacted_end_to_end(tmp_path, manifest, la
     assert secret not in exported
     assert "<redacted>" in markdown
     assert "<redacted>" in exported
+    for name in ("coverage.json", "exchanges.json", "run.json"):
+        assert secret not in (run_dir / name).read_text(encoding="utf-8")
 
 
 def test_runtime_records_machine_coverage_with_valid_evidence(tmp_path, manifest, lab_server):

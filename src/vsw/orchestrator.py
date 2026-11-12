@@ -12,14 +12,13 @@ from .adapters.browser import BrowserAdapter
 from .adapters.passive_http import PassiveHttpAdapter
 from .budget import Budget
 from .config import load_limits, repo_root
-from .domain import Coverage, CoverageOutcome, Engagement, Finding, FindingState, Severity
+from .domain import Coverage, Engagement, Finding, FindingState, Severity
 from .evidence import EvidenceStore, redact_text
 from .model_gateway import MockModelGateway
 from .policy import RoutingDenied, resolve_build_route
-from .reporting import render_markdown, write_report
-from .reproduction import finding_export
+from .reporting import write_observation_artifacts
 from .runtime import CoverageLedger
-from .scope import ScopeError, ScopeGuard, load_engagement, manifest_hash
+from .scope import ScopeError, ScopeGuard, load_engagement
 from .smoke import run_smoke
 from .util import utc_now
 
@@ -278,73 +277,21 @@ def run_observation(
     coverage.adapters = adapter_reports
     findings = _dedupe(findings)
     integrity = store.verify()
-    evidence = store.records()
-    evidence_index = {str(item["id"]): item for item in evidence if item.get("id")}
+    # If any capture or index is corrupt, none of its links can substantiate
+    # reproduction or negative coverage. Preserve the integrity failure, but
+    # keep unverified records out of every exported view.
+    evidence = store.records() if not integrity else []
     ledger = CoverageLedger(store)
-    finding_evidence_ids = {eid for finding in findings for eid in finding.evidence_ids}
-    for entry in adapter_reports:
-        adapter_evidence = [
-            item
-            for item in evidence
-            if item.get("source") == entry["adapter"]
-            and item.get("kind") in {"http", "browser"}
-        ]
-        evidence_ids = [str(item["id"]) for item in adapter_evidence if item.get("id")]
-        risk_area = ", ".join(str(item) for item in entry.get("capabilities", [])) or str(
-            entry["adapter"]
-        )
-        if entry["status"] not in {"completed", "partial"}:
-            ledger.record_machine(
-                surface=redact_text(str(target)),
-                risk_area=risk_area,
-                outcome=CoverageOutcome.NEEDS_FOLLOW_UP,
-                evidence_ids=evidence_ids,
-                evidence=str(entry.get("note") or "adapter did not complete"),
-                agent=str(entry["adapter"]),
-            )
-        elif any(evidence_id in finding_evidence_ids for evidence_id in evidence_ids):
-            ledger.record_machine(
-                surface=redact_text(str(target)),
-                risk_area=risk_area,
-                outcome=CoverageOutcome.REPORTED,
-                evidence_ids=evidence_ids,
-                evidence="finding(s) linked to this adapter's captures",
-                agent=str(entry["adapter"]),
-            )
-        elif evidence_ids:
-            ledger.record_machine(
-                surface=redact_text(str(target)),
-                risk_area=risk_area,
-                outcome=CoverageOutcome.NO_ISSUE_FOUND,
-                evidence_ids=evidence_ids,
-                evidence="no finding in the captured exchanges",
-                agent=str(entry["adapter"]),
-            )
-        else:
-            ledger.record_machine(
-                surface=redact_text(str(target)),
-                risk_area=risk_area,
-                outcome=CoverageOutcome.NEEDS_FOLLOW_UP,
-                evidence_ids=[],
-                evidence="adapter completed without captured HTTP evidence",
-                agent=str(entry["adapter"]),
-            )
+    ledger.record_observation(
+        target=redact_text(target),
+        adapters=adapter_reports,
+        evidence=evidence,
+        findings=findings,
+        stop_reason=coverage.stop_reason,
+    )
     coverage.entries = ledger.entries
 
     finished = utc_now()
-    engagement_summary = {
-        "id": engagement.id,
-        "owner": engagement.owner,
-        "approver": engagement.approver,
-        "authorization_ref": engagement.authorization_ref,
-        "profile": engagement.profile.value,
-        "expires_at": engagement.expires_at,
-        "origins": engagement.origins,
-        "methods": engagement.methods,
-        "path_prefixes": engagement.path_prefixes,
-        "mutation_allowed": engagement.mutation_allowed,
-        "manifest_sha256": manifest_hash(engagement),
-    }
     # A run only passes when evidence verifies, at least one adapter ran, and
     # every requested adapter completed. "No findings" from a run where the
     # browser was skipped for https is incomplete coverage, not a clean bill.
@@ -354,56 +301,27 @@ def run_observation(
     ]
     if integrity or not executed:
         run_status = "fail"
-    elif incomplete or any(item["status"] != "completed" for item in adapter_reports):
+    elif coverage.stop_reason or incomplete or any(
+        item["status"] != "completed" for item in adapter_reports
+    ):
         run_status = "partial"
     else:
         run_status = "pass"
 
-    payload: dict[str, Any] = {
-        "run_id": run_id,
-        "status": run_status,
-        "stage": "M1",
-        "mode": "live-local",
-        "started": started,
-        "finished": finished,
-        "engagement": engagement_summary,
-        "coverage": coverage.model_dump(mode="json"),
-        "findings": [finding_export(finding, evidence_index) for finding in findings],
-        "evidence": evidence,
-        "adapters": adapter_reports,
-        "budget": budget.status(),
-        "evidence_integrity": integrity,
-        "target": redact_text(target),
-    }
-    markdown = render_markdown(
+    payload = write_observation_artifacts(
+        run_dir,
         run_id=run_id,
-        engagement=engagement_summary,
+        status=run_status,
+        target=target,
+        engagement=engagement,
         findings=findings,
         coverage=coverage,
         evidence=evidence,
         adapters=adapter_reports,
-        budget=payload["budget"],
+        budget=budget.status(),
+        evidence_integrity=integrity,
         started=started,
         finished=finished,
-    )
-    write_report(run_dir, payload=payload, markdown=markdown)
-    (run_dir / "run.json").write_text(
-        json.dumps(
-            {
-                "run_id": run_id,
-                "stage": "M1",
-                "target": redact_text(target),
-                "engagement": engagement.id,
-                "findings": len(findings),
-                "validated": sum(
-                    1 for finding in findings if finding.state is FindingState.VALIDATED
-                ),
-                "evidence_integrity": integrity,
-                "status": run_status,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
     )
     payload["run_dir"] = str(run_dir)
     return payload

@@ -13,12 +13,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .domain import Coverage, Finding, FindingState
+from .domain import Coverage, CoverageOutcome, Engagement, Finding, FindingState
+from .evidence import redact_text, redact_value
 from .reproduction import (
+    finding_export,
     redact_export_payload,
     redact_reproduction,
     verify_reproduction,
 )
+from .scope import manifest_hash
 
 _MD_ACTIVE = str.maketrans(
     {
@@ -124,6 +127,8 @@ def render_markdown(
     budget: dict[str, Any],
     started: str,
     finished: str,
+    status: str = "",
+    evidence_integrity: list[str] | None = None,
 ) -> str:
     counts: dict[str, int] = {}
     for finding in findings:
@@ -138,6 +143,10 @@ def render_markdown(
         "",
         f"- Started: {_md(started, 40)}",
         f"- Finished: {_md(finished, 40)}",
+    ]
+    if status:
+        lines.append(f"- Run status: **{_md(status, 20)}**")
+    lines += [
         f"- Engagement: `{_md(engagement.get('id', ''), 60)}`",
         f"- Profile: `{_md(engagement.get('profile', ''), 40)}`",
         f"- Manifest hash: `{_md(engagement.get('manifest_sha256', ''), 80)}`",
@@ -327,6 +336,16 @@ def render_markdown(
         "- A missing header or a version string is an observation, not a validated weakness.",
         "- Absence of findings is not evidence of safety.",
         "",
+    ]
+    if evidence_integrity:
+        lines += [
+            "## Evidence integrity",
+            "",
+            "Evidence verification failed; reproduction links and coverage claims were withheld.",
+            *[f"- {_md(problem, 200)}" for problem in evidence_integrity],
+            "",
+        ]
+    lines += [
         "## Budget",
         "",
         f"- Delegate calls: {budget.get('calls', 0)} of {budget.get('limits', {}).get('max_delegate_calls_per_run', 0)}",
@@ -348,11 +367,142 @@ def write_report(
     """Write report files inside the run directory only."""
     run_dir = run_dir.resolve()
     md_path = _safe(run_dir, "report.md")
-    json_path = _safe(run_dir, "findings.json")
-    safe_payload = redact_export_payload(payload)
+    safe_payload = redact_value(redact_export_payload(payload))
     md_path.write_text(markdown, encoding="utf-8")
-    json_path.write_text(json.dumps(safe_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    json_path = _write_json(run_dir, "findings.json", safe_payload)
     return md_path, json_path
+
+
+def write_observation_artifacts(
+    run_dir: Path,
+    *,
+    run_id: str,
+    status: str,
+    target: str,
+    engagement: Engagement,
+    findings: list[Finding],
+    coverage: Coverage,
+    evidence: list[dict[str, Any]],
+    adapters: list[dict[str, Any]],
+    budget: dict[str, Any],
+    evidence_integrity: list[str],
+    started: str,
+    finished: str,
+) -> dict[str, Any]:
+    """Build and write every observation artifact from one redacted snapshot."""
+    run_dir = run_dir.resolve()
+    engagement_summary: dict[str, Any] = redact_value(
+        {
+            "id": engagement.id,
+            "owner": engagement.owner,
+            "approver": engagement.approver,
+            "authorization_ref": engagement.authorization_ref,
+            "profile": engagement.profile.value,
+            "expires_at": engagement.expires_at,
+            "origins": engagement.origins,
+            "methods": engagement.methods,
+            "path_prefixes": engagement.path_prefixes,
+            "mutation_allowed": engagement.mutation_allowed,
+            "manifest_sha256": manifest_hash(engagement),
+        }
+    )
+    safe_evidence: list[dict[str, Any]] = redact_value(evidence) if not evidence_integrity else []
+    record_index = {str(item["id"]): item for item in safe_evidence if item.get("id")}
+    safe_findings = [finding.model_copy(deep=True) for finding in findings]
+    if evidence_integrity:
+        for finding in safe_findings:
+            finding.state = FindingState.INCONCLUSIVE
+            finding.limitations.append("Evidence integrity failed; the finding cannot be confirmed.")
+    exported_findings = [finding_export(finding, record_index) for finding in safe_findings]
+    safe_coverage = Coverage.model_validate(redact_value(coverage.model_dump(mode="json")))
+    if evidence_integrity:
+        safe_coverage.entries = [
+            entry.model_copy(
+                update={
+                    "outcome": CoverageOutcome.NEEDS_FOLLOW_UP,
+                    "evidence": "evidence integrity failed; re-run required",
+                    "evidence_ids": [],
+                }
+            )
+            for entry in safe_coverage.entries
+        ]
+    safe_adapters: list[dict[str, Any]] = redact_value(adapters)
+    safe_budget: dict[str, Any] = redact_value(budget)
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "status": status,
+        "stage": "M1",
+        "mode": "live-local",
+        "started": started,
+        "finished": finished,
+        "engagement": engagement_summary,
+        "coverage": safe_coverage.model_dump(mode="json"),
+        "findings": exported_findings,
+        "evidence": safe_evidence,
+        "adapters": safe_adapters,
+        "budget": safe_budget,
+        "evidence_integrity": redact_value(evidence_integrity),
+        "target": redact_text(target),
+    }
+    # The returned payload is the exact redacted snapshot written to disk.
+    payload = redact_value(redact_export_payload(payload))
+    markdown = render_markdown(
+        run_id=run_id,
+        engagement=engagement_summary,
+        findings=[Finding.model_validate(item) for item in exported_findings],
+        coverage=safe_coverage,
+        evidence=safe_evidence,
+        adapters=safe_adapters,
+        budget=safe_budget,
+        started=started,
+        finished=finished,
+        status=status,
+        evidence_integrity=evidence_integrity,
+    )
+    write_report(run_dir, payload=payload, markdown=markdown)
+    _write_json(run_dir, "coverage.json", payload["coverage"])
+    _write_json(
+        run_dir,
+        "exchanges.json",
+        {
+            "run_id": run_id,
+            "exchanges": [
+                {
+                    "exchange_id": item["id"],
+                    "evidence_id": item["id"],
+                    "method": item.get("method"),
+                    "url": item.get("url"),
+                    "status": item.get("status"),
+                    "captured_at": item.get("captured_at"),
+                    "record_sha256": item.get("record_sha256"),
+                    "body_sha256": item.get("body_sha256"),
+                }
+                for item in safe_evidence
+                if item.get("kind") == "http" and item.get("id")
+            ],
+        },
+    )
+    _write_json(
+        run_dir,
+        "run.json",
+        {
+            "run_id": run_id,
+            "stage": payload["stage"],
+            "target": payload["target"],
+            "engagement": engagement_summary["id"],
+            "findings": len(exported_findings),
+            "validated": sum(item["state"] == FindingState.VALIDATED.value for item in exported_findings),
+            "evidence_integrity": payload["evidence_integrity"],
+            "status": status,
+        },
+    )
+    return payload
+
+
+def _write_json(root: Path, name: str, payload: Any) -> Path:
+    path = _safe(root, name)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 def _safe(root: Path, name: str) -> Path:

@@ -46,6 +46,10 @@ local Claude/Codex CLIs, and the local lab fixture.
   external subresources, browser third-party requests, state-changing GET forms.
 - Reports in Markdown and JSON with coverage, untested areas, evidence index, and
   escaped target content.
+- Observation artifacts now come from one redacted snapshot: the full CLI payload,
+  Markdown report, coverage ledger, HTTP exchange metadata index, and run summary.
+  Corrupt evidence fails the run and makes affected findings inconclusive; incomplete
+  adapters or an exhausted request budget leave coverage needing follow-up.
 - Clean control produces zero findings; the vulnerable fixture produces a validated
   reflection plus observed header/cookie/data-flow findings.
 - A run is `pass` only when evidence verifies and every requested adapter completed.

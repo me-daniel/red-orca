@@ -21,6 +21,7 @@ def _store(tmp_path: Path) -> EvidenceStore:
         body="clean",
         request_text="GET /clean/ HTTP/1.1\nHost: 127.0.0.1:8787\n\n",
         response_text="HTTP/1.1 200 OK\n\nclean",
+        source="passive-http",
     )
     return store
 
@@ -64,3 +65,35 @@ def test_machine_coverage_is_created_only_by_runtime(tmp_path: Path):
     assert isinstance(entry, MachineCoverageEntry)
     assert entry.source == "machine"
     assert entry.evidence_ids == ["E-001"]
+
+
+def test_tampered_evidence_cannot_support_negative_coverage(tmp_path: Path):
+    store = _store(tmp_path)
+    record_path = store.dir / "E-001.json"
+    record_path.write_text(record_path.read_text().replace("clean", "forged"))
+    ledger = CoverageLedger(store)
+    with pytest.raises(ValueError, match="unverified run evidence"):
+        ledger.record_machine(
+            surface="/clean/",
+            risk_area="reflection",
+            outcome=CoverageOutcome.NO_ISSUE_FOUND,
+            evidence_ids=["E-001"],
+        )
+
+
+@pytest.mark.parametrize("status, stop_reason", [("partial", ""), ("completed", "request limit reached")])
+def test_incomplete_adapter_never_reports_no_issue_found(
+    tmp_path: Path, status: str, stop_reason: str
+):
+    store = _store(tmp_path)
+    ledger = CoverageLedger(store)
+    ledger.record_observation(
+        target="http://127.0.0.1:8787/clean/",
+        adapters=[{"adapter": "passive-http", "status": status}],
+        evidence=store.records(),
+        findings=[],
+        stop_reason=stop_reason,
+    )
+    assert ledger.entries[0].source == "machine"
+    assert ledger.entries[0].outcome == CoverageOutcome.NEEDS_FOLLOW_UP
+    assert ledger.entries[0].evidence_ids == ["E-001"]

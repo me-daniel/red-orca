@@ -279,6 +279,8 @@ class EvidenceStore:
 
     def exchanges(self) -> list[dict[str, Any]]:
         """HTTP records are the run's verified exchange index."""
+        if self.verify():
+            return []
         return [item for item in self.records() if item.get("kind") == "http"]
 
     def verify(self) -> list[str]:
@@ -301,6 +303,9 @@ class EvidenceStore:
                 except json.JSONDecodeError:
                     problems.append("index: unreadable entry")
                     continue
+                if not isinstance(entry, dict):
+                    problems.append("index: entry is not an object")
+                    continue
                 entry_id = str(entry.get("id", ""))
                 if entry_id in indexed:
                     problems.append(f"index: duplicate entry for {entry_id}")
@@ -308,7 +313,14 @@ class EvidenceStore:
         on_disk: set[str] = set()
         for path in sorted(self.dir.glob("E-*.json")):
             on_disk.add(path.stem)
-            data = json.loads(path.read_text(encoding="utf-8"))
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                problems.append(f"{path.name}: unreadable record")
+                continue
+            if not isinstance(data, dict):
+                problems.append(f"{path.name}: record is not an object")
+                continue
             claimed = data.pop("record_sha256", "")
             actual = _sha256_text(
                 json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -316,6 +328,8 @@ class EvidenceStore:
             if claimed != actual:
                 problems.append(f"{path.name}: record hash mismatch")
                 continue
+            if data.get("id") != path.stem:
+                problems.append(f"{path.name}: record id disagrees with the filename")
             if path.stem not in indexed:
                 problems.append(f"{path.name}: record is not in the evidence index")
             elif indexed[path.stem] != claimed:

@@ -130,7 +130,16 @@ uv run vsw models check <route>  # one live call; the route stays disabled
 Stage: **M1 local HTTP observation**. `vsw lab up`, `vsw run`, and `vsw report` inspect
 a local fixture, capture hashed evidence, and produce a report; the clean control
 produces no findings. Scope is enforced per request against pinned addresses, and
-HTTPS is refused rather than tunnelled, so this stage is local HTTP only. `PROGRESS.md` records what is live, mocked, and blocked. The build coordinator is DeepSeek V4.1 Flash via OpenCode. Claude and Codex are bounded delegates through a policy-checked gateway; cyber-only models are rejected during build. The runtime `ModelGateway` is wired for OpenCode Go and OpenRouter, but every route is disabled until it is checked and evaluated. None of this is a live assessment.
+HTTPS is refused rather than tunnelled, so this stage is local HTTP only. Each
+observation run writes `report.md`, `findings.json` (the CLI's full run payload),
+`coverage.json`, `exchanges.json` (a metadata index linked to evidence IDs), and
+`run.json`. Failed evidence integrity makes the run fail and withholds validated
+finding labels and coverage claims. `PROGRESS.md` records what is live, mocked,
+and blocked. The build coordinator is DeepSeek V4.1 Flash via OpenCode. Claude and
+Codex are bounded delegates through a policy-checked gateway; cyber-only models
+are rejected during build. The runtime `ModelGateway` is wired for OpenCode Go and
+OpenRouter, but every route is disabled until it is checked and evaluated. None
+of this is a live assessment.
 
 ## Who this is for
 

@@ -690,16 +690,18 @@ def report(
     except ScopeError as exc:
         typer.echo(json.dumps({"status": "error", "reason": str(exc)}, indent=2))
         raise typer.Exit(code=1)
-    typer.echo(
-        json.dumps(
-            {
-                "run_id": path.name,
-                "markdown": str(path / "report.md"),
-                "json": str(path / "findings.json"),
-            },
-            indent=2,
-        )
-    )
+    artifacts = {
+        "markdown": path / "report.md",
+        "json": path / "findings.json",
+        "coverage": path / "coverage.json",
+        "exchanges": path / "exchanges.json",
+        "run": path / "run.json",
+    }
+    payload = {
+        "run_id": path.name,
+        **{name: str(file) for name, file in artifacts.items() if file.exists()},
+    }
+    typer.echo(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":
