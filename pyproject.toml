@@ -45,3 +45,8 @@ testpaths = ["tests"]
 python_version = "3.12"
 strict = true
 packages = ["vsw"]
+
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20261111",
+]

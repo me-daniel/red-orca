@@ -1,0 +1,25 @@
+id: lab-local
+owner: daniel
+approver: daniel
+authorization_ref: local fixture, repo-owned; no third-party system
+profile: lab
+expires_at: '2027-01-01T00:00:00Z'
+origins:
+- http://127.0.0.1:8787
+methods:
+- GET
+path_prefixes:
+- /vuln
+- /clean
+exclude_paths:
+- /vuln/delete
+mutation_allowed: false
+max_requests: 60
+max_rps: 2.0
+max_wall_seconds: 180.0
+max_concurrency: 1
+approval:
+  approved: true
+  approved_by: daniel
+  approved_at: '2026-11-12T01:58:26Z'
+  approved_manifest_sha256: 0577f8f7cac3e27bdce30b51870d94cc2192595d3f36d9237b8d3b51dce0a754

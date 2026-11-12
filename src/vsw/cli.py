@@ -6,16 +6,16 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 
 from .budget import Budget
 from .coding_agent_gateway import CodingAgentGateway
 from .config import load_limits, repo_root
-from .domain import TaskEnvelope
-from .orchestrator import run_mock_demo
-from .policy import BUILD_ROUTES, RoutingDenied, resolve_build_route
+from .domain import Role, TaskEnvelope
+from .orchestrator import run_mock_demo, run_observation
+from .policy import BUILD_ROUTES, RoutingDenied, enforce_role, resolve_build_route
 from .smoke import run_smoke
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -107,8 +107,38 @@ def doctor(
         _result(checks, "policy:cyber_blocked", False, "gpt-6-sol was allowed at build time")
     except RoutingDenied as exc:
         _result(checks, "policy:cyber_blocked", exc.status == "blocked", exc.reason)
+    try:
+        enforce_role("claude", "implement")
+        _result(checks, "policy:role_split", False, "claude was allowed to implement")
+    except RoutingDenied as exc:
+        _result(checks, "policy:role_split", exc.status == "blocked", exc.reason)
 
     _result(checks, "docker_for_m2", bool(shutil.which("docker")), "needed by AntiFox/Strix", False)
+
+    from .lab import create_app
+    from .scope import ScopeError, load_engagement
+
+    _result(checks, "lab_fixture", callable(create_app), "vsw.lab.create_app")
+    try:
+        engagement = load_engagement(root / "configs" / "engagements" / "lab-local.yaml")
+        _result(
+            checks,
+            "engagement:lab-local",
+            True,
+            f"{engagement.id} profile={engagement.profile.value}",
+        )
+    except ScopeError as exc:
+        _result(checks, "engagement:lab-local", False, str(exc))
+
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            executable = pw.chromium.executable_path
+        present = bool(executable) and Path(str(executable)).exists()
+        _result(checks, "playwright_chromium", present, str(executable))
+    except Exception as exc:  # noqa: BLE001 - report, do not crash the doctor
+        _result(checks, "playwright_chromium", False, f"{type(exc).__name__}: {exc}")
 
     if json_output:
         typer.echo(json.dumps(checks, indent=2))
@@ -137,8 +167,12 @@ def demo() -> None:
 @app.command()
 def smoke(
     live: bool = typer.Option(False, "--live", help="Use real Claude/Codex delegates."),
+    mock: bool = typer.Option(False, "--mock", help="Deterministic mock delegates (default)."),
 ) -> None:
-    """Run the M0 coding-and-review smoke task."""
+    """Claude advises, Codex implements in a worktree, Codex reviews the diff."""
+    if live and mock:
+        typer.echo(json.dumps({"status": "error", "reason": "--live and --mock are exclusive"}))
+        raise typer.Exit(code=2)
     report = run_smoke("live" if live else "mock")
     typer.echo(
         json.dumps(
@@ -158,12 +192,28 @@ def smoke(
 
 @app.command()
 def delegate(
-    model: str = typer.Option(..., "--model", help="claude or codex"),
-    label: str = typer.Option(..., "--label", help="opus, sonnet, or gpt-6.1-sol"),
-    effort: str = typer.Option(..., "--effort", help="medium or high"),
+    model: str = typer.Option(..., "--model", help="claude (advice) or codex (implement/review)"),
+    label: str = typer.Option(
+        "opus", "--label", help="opus, sonnet, or gpt-6.1-sol (codex default)"
+    ),
+    effort: str = typer.Option("medium", "--effort", help="medium or high"),
     prompt: str = typer.Option(..., "--prompt"),
+    role: str | None = typer.Option(None, "--role", help="advice, implement, or review"),
+    permitted_path: Annotated[
+        list[str] | None,
+        typer.Option("--permitted-path", help="Glob an implementation may touch. Repeatable."),
+    ] = None,
+    pytest_path: Annotated[
+        list[str] | None,
+        typer.Option("--pytest-path", help="Test path to run in the worktree. Repeatable."),
+    ] = None,
+    integrate: bool = typer.Option(
+        False, "--integrate", help="Apply a clean, in-bounds implementation diff."
+    ),
     budget_usd: float = typer.Option(0.5, "--budget-usd"),
-    timeout: float = typer.Option(120.0, "--timeout"),
+    timeout: float | None = typer.Option(
+        None, "--timeout", help="Defaults by role: 120s advice/review, 300s implement."
+    ),
     escalation_reason: str | None = typer.Option(None, "--escalation-reason"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Resolve the route without calling a model."
@@ -173,19 +223,39 @@ def delegate(
     root = repo_root()
     limits = load_limits(root)
     budget = Budget(limits)
+    family = model.strip().lower()
+    # The default role follows the family so a plain call cannot cross the split.
+    if role is None:
+        role = "advice" if family == "claude" else "implement"
+    if family == "codex" and label == "opus":
+        label = "gpt-6.1-sol"
+    if family == "claude" and label == "gpt-6.1-sol":
+        label = "opus"
     envelope = TaskEnvelope(
         id="cli-delegate",
-        purpose="cli delegated task",
-        family=model,
+        purpose=f"cli delegated {role} task",
+        family=family,
         label=label,
         effort=effort,
+        role=Role(role),
         budget_usd=budget_usd,
-        timeout_s=timeout,
+        timeout_s=timeout
+        or (
+            limits.implementation_timeout_seconds
+            if role == "implement"
+            else limits.per_call_timeout_seconds
+        ),
+        permitted_paths=permitted_path or [],
+        pytest_paths=pytest_path or [],
+        integrate=integrate,
         escalation_reason=escalation_reason,
     )
     if dry_run:
         try:
-            route = resolve_build_route(model, label, effort, limits, budget_usd, escalation_reason)
+            enforce_role(family, role)
+            route = resolve_build_route(
+                family, label, effort, limits, budget_usd, escalation_reason
+            )
         except RoutingDenied as exc:
             typer.echo(json.dumps({"decision": exc.status, "reason": exc.reason}, indent=2))
             raise typer.Exit(code=1)
@@ -221,6 +291,227 @@ def policy() -> None:
                 "build_allowlist": sorted(":".join(k) for k in BUILD_ROUTES),
                 "cyber_only_blocked": ["gpt-6-sol", "luna", "luna-max", "sol-max"],
                 "efforts_blocked": ["low", "xhigh", "max"],
+            },
+            indent=2,
+        )
+    )
+
+
+# -- M1: lab, observation runs, findings, reports ---------------------------
+
+lab_app = typer.Typer(no_args_is_help=True, help="Local disposable lab fixture.")
+engagement_app = typer.Typer(no_args_is_help=True, help="Validate or approve engagement manifests.")
+app.add_typer(lab_app, name="lab")
+app.add_typer(engagement_app, name="engagement")
+
+DEFAULT_MANIFEST = Path("configs/engagements/lab-local.yaml")
+MANIFEST_OPTION = typer.Option(DEFAULT_MANIFEST, "--manifest", exists=True, dir_okay=False)
+APPROVER_OPTION = typer.Option(..., "--approver", help="Human approving this scope.")
+
+
+@lab_app.command("up")
+def lab_up(port: int = typer.Option(8787, "--port")) -> None:
+    """Start the lab fixture in the background."""
+    from .lab import start_lab
+
+    try:
+        state = start_lab(repo_root(), port=port)
+    except RuntimeError as exc:
+        typer.echo(json.dumps({"status": "error", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(state, indent=2))
+
+
+@lab_app.command("down")
+def lab_down() -> None:
+    """Stop the lab fixture."""
+    from .lab import stop_lab
+
+    typer.echo(json.dumps(stop_lab(repo_root()), indent=2))
+
+
+@lab_app.command("status")
+def lab_status() -> None:
+    """Report whether the lab fixture is running."""
+    from .lab import state_path
+
+    path = state_path(repo_root())
+    if not path.exists():
+        typer.echo(json.dumps({"running": False}, indent=2))
+        return
+    typer.echo(json.dumps({"running": True, **json.loads(path.read_text())}, indent=2))
+
+
+@engagement_app.command("validate")
+def engagement_validate(
+    manifest: Path = MANIFEST_OPTION,
+) -> None:
+    """Check that a manifest exists, is unexpired, and its approval matches."""
+    from .scope import ScopeError, load_engagement, manifest_hash
+
+    try:
+        engagement = load_engagement(manifest)
+    except ScopeError as exc:
+        typer.echo(json.dumps({"decision": "blocked", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    typer.echo(
+        json.dumps(
+            {
+                "decision": "allowed",
+                "id": engagement.id,
+                "profile": engagement.profile.value,
+                "manifest_sha256": manifest_hash(engagement),
+            },
+            indent=2,
+        )
+    )
+
+
+@engagement_app.command("approve")
+def engagement_approve(
+    manifest: Path = MANIFEST_OPTION,
+    approver: str = APPROVER_OPTION,
+) -> None:
+    """Record approval over the current manifest content."""
+    from .scope import ScopeError, approve_manifest, manifest_hash
+
+    try:
+        engagement = approve_manifest(manifest, approver)
+    except ScopeError as exc:
+        typer.echo(json.dumps({"decision": "blocked", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    typer.echo(
+        json.dumps(
+            {
+                "decision": "approved",
+                "id": engagement.id,
+                "manifest_sha256": manifest_hash(engagement),
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def run(
+    manifest: Path = MANIFEST_OPTION,
+    target: str = typer.Option(
+        None, "--target", help="In-scope URL; defaults to the first origin."
+    ),
+    browser: bool = typer.Option(True, "--browser/--no-browser", help="Use Playwright."),
+) -> None:
+    """Observe a scoped target, capture evidence, and write a report."""
+    from .scope import ScopeError
+
+    try:
+        report = run_observation(manifest, target, use_browser=browser)
+    except ScopeError as exc:
+        typer.echo(json.dumps({"decision": "blocked", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": report["run_id"],
+                "status": report["status"],
+                "run_dir": report["run_dir"],
+                "findings": len(report["findings"]),
+                "validated": sum(1 for item in report["findings"] if item["state"] == "validated"),
+                "evidence_integrity": report["evidence_integrity"],
+                "coverage": {
+                    "requests_made": report["coverage"]["requests_made"],
+                    "request_limit": report["coverage"]["request_limit"],
+                    "stop_reason": report["coverage"]["stop_reason"] or "completed",
+                },
+            },
+            indent=2,
+        )
+    )
+    if report["status"] != "pass":
+        raise typer.Exit(code=1)
+
+
+def _run_dir(value: str | None) -> Path:
+    from .scope import ScopeError
+
+    root = repo_root()
+    if value:
+        given = Path(value)
+        if given.is_absolute():
+            path = given.resolve()
+        else:
+            candidates = [root / given, root / "runs" / given]
+            path = next((item for item in candidates if item.exists()), candidates[0]).resolve()
+    else:
+        candidates = sorted((root / "runs").glob("obs-*"))
+        if not candidates:
+            typer.echo(json.dumps({"status": "error", "reason": "no observation runs"}, indent=2))
+            raise typer.Exit(code=1)
+        path = candidates[-1]
+    if not (path / "findings.json").exists():
+        raise ScopeError(f"{path} has no findings.json")
+    return path
+
+
+@app.command()
+def findings(
+    run: str = typer.Option(None, "--run", help="Run id or path; defaults to the latest."),
+    state: str = typer.Option(None, "--state", help="Filter by finding state."),
+    severity: str = typer.Option(None, "--severity", help="Filter by severity."),
+) -> None:
+    """List findings from an observation run."""
+    from .scope import ScopeError
+
+    try:
+        path = _run_dir(run)
+    except ScopeError as exc:
+        typer.echo(json.dumps({"status": "error", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    payload = json.loads((path / "findings.json").read_text(encoding="utf-8"))
+    items = payload.get("findings", [])
+    if state:
+        items = [item for item in items if item.get("state") == state]
+    if severity:
+        items = [item for item in items if item.get("severity") == severity]
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": payload.get("run_id"),
+                "count": len(items),
+                "findings": [
+                    {
+                        "id": item["id"],
+                        "severity": item["severity"],
+                        "state": item["state"],
+                        "title": item["title"],
+                        "endpoint": item["endpoint"],
+                        "evidence": item["evidence_ids"],
+                    }
+                    for item in items
+                ],
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def report(
+    run: str = typer.Option(None, "--run", help="Run id or path; defaults to the latest."),
+) -> None:
+    """Print the path to a run report."""
+    from .scope import ScopeError
+
+    try:
+        path = _run_dir(run)
+    except ScopeError as exc:
+        typer.echo(json.dumps({"status": "error", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": path.name,
+                "markdown": str(path / "report.md"),
+                "json": str(path / "findings.json"),
             },
             indent=2,
         )

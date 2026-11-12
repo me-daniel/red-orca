@@ -70,6 +70,22 @@ def test_runtime_cyber_routes_are_disabled():
     assert exc.value.status == "blocked"
 
 
+def test_budget_reset_clock_keeps_calls_and_spend():
+    import time as _time
+
+    budget = Budget(Limits(max_wall_seconds_per_run=1, max_delegate_calls_per_run=3))
+    budget.begin_call("a")
+    budget.record(0.25)
+    budget.started = _time.monotonic() - 3600
+    with pytest.raises(BudgetExceeded):
+        budget.begin_call("a")
+    budget.reset_clock()
+    budget.begin_call("a")
+    assert budget.calls == 2
+    assert budget.spent_usd == 0.25
+    assert budget.remaining_seconds() > 0
+
+
 def test_budget_call_limit():
     budget = Budget(Limits(max_delegate_calls_per_run=1))
     budget.begin_call("claude:sonnet:high")

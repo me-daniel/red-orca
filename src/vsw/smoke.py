@@ -1,11 +1,13 @@
-"""M0 smoke: one small coding-and-review task through the real gateway."""
+"""Smoke: Claude advises, Codex implements in a worktree, Codex reviews the diff.
+
+The three calls exercise the enforced role split rather than relying on prompt
+wording: the adviser gets no tools, the implementer runs in its own worktree and
+must stay inside the permitted paths, and the reviewer runs read-only.
+"""
 
 from __future__ import annotations
 
 import json
-import re
-import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -18,7 +20,7 @@ from .coding_agent_gateway import (
     MockAdapter,
 )
 from .config import load_limits, repo_root
-from .domain import Status, TaskEnvelope
+from .domain import Role, Status, TaskEnvelope
 from .util import utc_now
 
 SPEC = """Write Python 3 code for this specification.
@@ -30,8 +32,6 @@ Function: clamp(value, low, high)
 - Raise ValueError when low > high
 - Accept ints and floats
 - No prints, no global state, no file or network I/O
-
-Return only the function definition. No markdown fences, no tests, no explanation.
 """
 
 TESTS = """import unittest
@@ -71,18 +71,26 @@ MOCK_IMPLEMENTATION = """def clamp(value, low, high):
     return max(low, min(value, high))
 """
 
+ADVICE_PROMPT = f"""You are advising, not implementing. Do not write code.
 
-def extract_code(text: str) -> str:
-    text = text.strip()
-    if "```" in text:
-        blocks = re.findall(r"```(?:python)?\s*(.*?)```", text, re.DOTALL)
-        if blocks:
-            text = max(blocks, key=len).strip()
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if line.startswith(("def ", "class ", "@", "import ", "from ")):
-            return "\n".join(lines[index:]).strip() + "\n"
-    return text + "\n"
+SPECIFICATION:
+{SPEC}
+
+List exactly two edge cases the implementation must handle and one likely bug.
+Under 120 words. No code blocks."""
+
+IMPLEMENT_PROMPT = f"""Implement this in the repository root. Create exactly two files:
+`clamp.py` and `test_clamp.py`. Do not touch anything else.
+
+SPECIFICATION:
+{SPEC}
+
+REQUIRED TESTS for `test_clamp.py`:
+{TESTS}
+
+ADVISER NOTES:
+{{advice}}
+"""
 
 
 def _verdict(text: str) -> str | None:
@@ -93,28 +101,25 @@ def _verdict(text: str) -> str | None:
     return None
 
 
-def _run_tests(run_dir: Path) -> tuple[int, str]:
-    proc = subprocess.run(
-        [sys.executable, "-m", "unittest", "-v", "test_clamp"],
-        cwd=str(run_dir),
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-
-
 def _mock_adapters() -> dict[str, Adapter]:
-    def implement(envelope: TaskEnvelope, prompt: str) -> AdapterOutput:
-        return AdapterOutput(text=MOCK_IMPLEMENTATION, duration_s=0.0)
+    def advise(envelope: TaskEnvelope, prompt: str) -> AdapterOutput:
+        return AdapterOutput(
+            text="Two edge cases: low > high, and float bounds. Likely bug: off-by-one "
+            "when value equals a bound.",
+            duration_s=0.0,
+        )
 
     def review(envelope: TaskEnvelope, prompt: str) -> AdapterOutput:
         return AdapterOutput(
-            text="APPROVED\nMock review: tests define the behavior.", duration_s=0.0
+            text="APPROVED\nMock review: the diff matches the spec.", duration_s=0.0
         )
 
-    return {"claude": MockAdapter(implement), "codex": MockAdapter(review)}
+    return {
+        "claude": MockAdapter(advise),
+        "codex": MockAdapter(
+            review, files={"clamp.py": MOCK_IMPLEMENTATION, "test_clamp.py": TESTS}
+        ),
+    }
 
 
 def run_smoke(mode: str = "mock", root: Path | None = None) -> dict[str, Any]:
@@ -131,6 +136,7 @@ def run_smoke(mode: str = "mock", root: Path | None = None) -> dict[str, Any]:
         "run_id": run_id,
         "stage": "M0",
         "mode": mode,
+        "roles": {"advice": "claude", "implement": "codex", "review": "codex"},
         "started": utc_now(),
         "checks": [],
         "results": [],
@@ -139,51 +145,83 @@ def run_smoke(mode: str = "mock", root: Path | None = None) -> dict[str, Any]:
     def check(name: str, ok: bool, detail: str = "") -> None:
         report["checks"].append({"name": name, "ok": ok, "detail": detail})
 
+    # 1. Claude advises. Text only, no tools, no worktree.
+    advice_env = TaskEnvelope(
+        id=f"{run_id}-advice",
+        purpose="advise on clamp edge cases",
+        family="claude",
+        label="opus",
+        effort="medium",
+        role=Role.ADVICE,
+        budget_usd=limits.max_task_budget_usd,
+        timeout_s=limits.per_call_timeout_seconds,
+        permitted_paths=[],
+    )
+    advice = gateway.run(advice_env, ADVICE_PROMPT)
+    report["results"].append(advice.model_dump(mode="json"))
+    check("advice_completed", advice.status == Status.COMPLETED, advice.status.value)
+    check(
+        "advice_text_only",
+        not advice.changed_files,
+        f"changed={advice.changed_files}" if advice.changed_files else "no repository changes",
+    )
+    if advice.status != Status.COMPLETED:
+        return _finish(report, run_dir, budget)
+
+    # 2. Codex implements in an isolated worktree; the diff is captured, not applied.
     impl_env = TaskEnvelope(
         id=f"{run_id}-impl",
         purpose="implement clamp",
-        family="claude",
-        label="sonnet",
+        family="codex",
+        label="gpt-6.1-sol",
         effort="high",
+        role=Role.IMPLEMENT,
         budget_usd=limits.max_task_budget_usd,
-        timeout_s=limits.per_call_timeout_seconds,
-        permitted_paths=[f"runs/{run_id}/**"],
+        timeout_s=limits.implementation_timeout_seconds,
+        permitted_paths=["clamp.py", "test_clamp.py"],
+        pytest_paths=["test_clamp.py"],
+        integrate=False,
     )
-    impl = gateway.run(impl_env, SPEC)
+    impl = gateway.run(impl_env, IMPLEMENT_PROMPT.format(advice=advice.output))
     report["results"].append(impl.model_dump(mode="json"))
     check("implement_completed", impl.status == Status.COMPLETED, impl.status.value)
+    outside = [path for path in impl.changed_files if path not in {"clamp.py", "test_clamp.py"}]
+    check(
+        "changed_files_within_bounds",
+        impl.status == Status.COMPLETED and not outside,
+        f"changed={impl.changed_files} outside={outside}",
+    )
+    check(
+        "tests_pass",
+        bool(impl.tests.get("ok")),
+        str(impl.tests.get("detail", "no tests were run")),
+    )
     if impl.status != Status.COMPLETED:
         return _finish(report, run_dir, budget)
 
-    code = extract_code(impl.output)
-    (run_dir / "clamp.py").write_text(code, encoding="utf-8")
-    (run_dir / "test_clamp.py").write_text(TESTS, encoding="utf-8")
-    test_rc, test_output = _run_tests(run_dir)
-    (run_dir / "test_output.txt").write_text(test_output, encoding="utf-8")
-    check("tests_pass", test_rc == 0, test_output.strip().splitlines()[-1] if test_output else "")
-
+    # 3. Codex reviews the captured diff read-only.
     review_env = TaskEnvelope(
         id=f"{run_id}-review",
         purpose="review clamp implementation",
         family="codex",
         label="gpt-6.1-sol",
         effort="high",
+        role=Role.REVIEW,
         budget_usd=limits.max_task_budget_usd,
         timeout_s=limits.per_call_timeout_seconds,
         permitted_paths=[],
     )
-    review_prompt = f"""Independent code review. Do not use tools.
+    review_prompt = f"""Independent code review. Read-only; do not modify files.
 
 SPECIFICATION:
 {SPEC}
 
-CODE:
-```python
-{code}
+DIFF UNDER REVIEW (files: {impl.changed_files}):
+```diff
+{impl.diff[:12000]}
 ```
 
-TEST RESULT (exit code {test_rc}):
-{test_output[-3000:]}
+TEST RESULT: {impl.tests.get("ok")} ({impl.tests.get("detail", "")})
 
 Reply with exactly one of these on the first line: APPROVED, CHANGES_REQUESTED, INCONCLUSIVE.
 Then list up to 5 concrete findings, or write "No issues found."
@@ -195,9 +233,8 @@ Then list up to 5 concrete findings, or write "No issues found."
     check("review_verdict", verdict == "APPROVED", f"verdict={verdict}")
 
     report["artifacts"] = {
-        "clamp": str(run_dir / "clamp.py"),
-        "tests": str(run_dir / "test_clamp.py"),
-        "test_output": str(run_dir / "test_output.txt"),
+        "patch": impl.patch_path,
+        "changed_files": impl.changed_files,
     }
     return _finish(report, run_dir, budget)
 
@@ -223,12 +260,14 @@ def _finish(report: dict[str, Any], run_dir: Path, budget: Budget) -> dict[str, 
     lines += ["", "## Delegates", ""]
     for result in report["results"]:
         lines.append(
-            f"- **{result['model_requested']}** status={result['status']} "
+            f"- **{result['model_requested']}** role={result.get('role')} status={result['status']} "
             f"model_actual={result.get('model_actual')} "
             f"effort={result.get('effort_actual')} cost=${result.get('cost_usd', 0):.4f}"
         )
         for limitation in result.get("limitations", []):
             lines.append(f"  - limitation: {limitation}")
+        if result.get("changed_files"):
+            lines.append(f"  - changed: {', '.join(result['changed_files'])}")
     (run_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     report["run_dir"] = str(run_dir)
     return report

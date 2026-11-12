@@ -1,4 +1,13 @@
-"""CodingAgentGateway: bounded, policy-checked Claude/Codex delegation."""
+"""CodingAgentGateway: bounded, policy-checked Claude/Codex delegation.
+
+Roles are enforced here, not in prompts:
+
+- Claude is a text-only adviser. It never gets tools, and if the repository
+  working tree changes during an advice call the result is rejected.
+- Codex implements in a separate worktree and reviews read-only. Its changes
+  are captured as a diff and rejected when they fall outside `permitted_paths`
+  before anything is integrated.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +15,8 @@ import fnmatch
 import json
 import shutil
 import subprocess
+import sys
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -14,9 +25,11 @@ from typing import Any, Protocol
 
 from .budget import Budget, BudgetExceeded
 from .config import Limits, repo_root
-from .domain import Phase, Status, TaskEnvelope, TaskResult
-from .policy import Route, RoutingDenied, resolve_build_route
+from .domain import Phase, Role, Status, TaskEnvelope, TaskResult
+from .policy import Route, RoutingDenied, enforce_role, resolve_build_route
 from .util import strip_ansi, truncate
+
+MAX_PATCH_CHARS = 200_000
 
 
 @dataclass
@@ -32,7 +45,12 @@ class AdapterOutput:
 
 class Adapter(Protocol):
     def run(
-        self, envelope: TaskEnvelope, route: Route, prompt: str, timeout: float
+        self,
+        envelope: TaskEnvelope,
+        route: Route,
+        prompt: str,
+        timeout: float,
+        workdir: Path | None = None,
     ) -> AdapterOutput: ...
 
 
@@ -44,14 +62,44 @@ def _truncate(text: str, limit: int) -> str:
     return truncate(text, limit)[0]
 
 
+def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+
+def _git_status(root: Path) -> dict[str, str]:
+    """Path -> porcelain status. Read-only: never restages the caller's index."""
+    proc = _git("status", "--porcelain", "--untracked-files=all", cwd=root)
+    entries: dict[str, str] = {}
+    for line in (proc.stdout or "").splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:  # rename: record the destination
+            path = path.split(" -> ", 1)[1]
+        entries[path] = line[:2]
+    return entries
+
+
 class ClaudeCliAdapter:
-    """Uses the locally authenticated Claude Code CLI. Text in, text out."""
+    """Text-only adviser: one turn, no tools, no repository writes."""
 
     def __init__(self, root: Path | None = None):
         self.root = root or repo_root()
 
     def run(
-        self, envelope: TaskEnvelope, route: Route, prompt: str, timeout: float
+        self,
+        envelope: TaskEnvelope,
+        route: Route,
+        prompt: str,
+        timeout: float,
+        workdir: Path | None = None,
     ) -> AdapterOutput:
         binary = shutil.which("claude")
         if not binary:
@@ -75,7 +123,7 @@ class ClaudeCliAdapter:
         try:
             proc = subprocess.run(
                 cmd,
-                cwd=str(self.root),
+                cwd=str(workdir or self.root),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -84,21 +132,26 @@ class ClaudeCliAdapter:
         except subprocess.TimeoutExpired as exc:
             raise AdapterError(f"timeout after {timeout:.0f}s") from exc
         elapsed = time.monotonic() - start
-        stdout = strip_ansi(proc.stdout or "")
-        try:
-            payload = json.loads(stdout)
-        except json.JSONDecodeError as exc:
-            raise AdapterError(
-                f"unparseable Claude output (rc={proc.returncode}): {stdout[:300]}"
-            ) from exc
-        text = str(payload.get("result") or "")
+
+        payload: dict[str, Any] = {}
+        if (proc.stdout or "").strip():
+            try:
+                payload = json.loads(proc.stdout)
+            except json.JSONDecodeError:
+                payload = {}
+        text = str(payload.get("result") or proc.stdout or "").strip()
         usage = payload.get("usage") or {}
+        if proc.returncode != 0 and not text:
+            raise AdapterError(
+                f"claude exited {proc.returncode}: {strip_ansi(proc.stderr or '')[-300:]}"
+            )
         return AdapterOutput(
             text=text,
+            # A text-only adviser never reports repository changes; the gateway
+            # independently verifies this against the working tree.
+            changed_files=[],
             cost_usd=float(payload.get("total_cost_usd") or 0.0),
-            input_tokens=int(usage.get("input_tokens") or 0)
-            + int(usage.get("cache_read_input_tokens") or 0)
-            + int(usage.get("cache_creation_input_tokens") or 0),
+            input_tokens=int(usage.get("input_tokens") or 0),
             output_tokens=int(usage.get("output_tokens") or 0),
             duration_s=elapsed,
             note="" if proc.returncode == 0 else f"rc={proc.returncode}",
@@ -106,13 +159,18 @@ class ClaudeCliAdapter:
 
 
 class CodexCliAdapter:
-    """Uses the locally authenticated Codex CLI. Text in, text out."""
+    """Uses the locally authenticated Codex CLI. Implementation and review."""
 
     def __init__(self, root: Path | None = None):
         self.root = root or repo_root()
 
     def run(
-        self, envelope: TaskEnvelope, route: Route, prompt: str, timeout: float
+        self,
+        envelope: TaskEnvelope,
+        route: Route,
+        prompt: str,
+        timeout: float,
+        workdir: Path | None = None,
     ) -> AdapterOutput:
         binary = shutil.which("codex")
         if not binary:
@@ -126,13 +184,16 @@ class CodexCliAdapter:
             route.cli_model,
             "-c",
             f'model_reasoning_effort="{route.effort}"',
-            prompt,
         ]
+        if envelope.role is Role.REVIEW:
+            # Review is read-only; never let a reviewer edit the tree it reviews.
+            cmd += ["--sandbox", "read-only"]
+        cmd.append(prompt)
         start = time.monotonic()
         try:
             proc = subprocess.run(
                 cmd,
-                cwd=str(self.root),
+                cwd=str(workdir or self.root),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -173,14 +234,33 @@ class CodexCliAdapter:
 
 
 class MockAdapter:
-    """Deterministic adapter for demos and tests."""
+    """Deterministic adapter for demos and tests.
 
-    def __init__(self, responder: Callable[[TaskEnvelope, str], AdapterOutput]):
+    `files` simulates an implementer writing into its worktree; a mock that only
+    returns text would correctly be rejected as "no file changes".
+    """
+
+    def __init__(
+        self,
+        responder: Callable[[TaskEnvelope, str], AdapterOutput],
+        files: dict[str, str] | None = None,
+    ):
         self.responder = responder
+        self.files = dict(files or {})
 
     def run(
-        self, envelope: TaskEnvelope, route: Route, prompt: str, timeout: float
+        self,
+        envelope: TaskEnvelope,
+        route: Route,
+        prompt: str,
+        timeout: float,
+        workdir: Path | None = None,
     ) -> AdapterOutput:
+        if self.files and workdir is not None and envelope.role is Role.IMPLEMENT:
+            for name, content in self.files.items():
+                target = workdir / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
         return self.responder(envelope, prompt)
 
 
@@ -190,11 +270,72 @@ def _path_allowed(path: str, permitted: list[str]) -> bool:
     return any(fnmatch.fnmatch(path, pattern) for pattern in permitted)
 
 
+def reject_outside_paths(changed: list[str], permitted: list[str]) -> list[str]:
+    """Paths that must block integration."""
+    return [path for path in changed if not _path_allowed(path, permitted)]
+
+
+class WorktreeError(RuntimeError):
+    pass
+
+
+def _worktree_add(root: Path, name: str) -> Path:
+    base = Path(tempfile.mkdtemp(prefix=f"vsw-wt-{name}-"))
+    target = base / "tree"
+    proc = _git("worktree", "add", "--detach", str(target), "HEAD", cwd=root)
+    if proc.returncode != 0:
+        raise WorktreeError(f"git worktree add failed: {strip_ansi(proc.stderr)[-300:]}")
+    return target
+
+
+def _worktree_remove(root: Path, target: Path) -> None:
+    _git("worktree", "remove", "--force", str(target), cwd=root)
+    shutil.rmtree(target.parent, ignore_errors=True)
+    _git("worktree", "prune", cwd=root)
+
+
+def _collect_changes(worktree: Path) -> tuple[list[str], str]:
+    _git("add", "-A", "-N", cwd=worktree)
+    status = _git("status", "--porcelain", cwd=worktree)
+    changed: list[str] = []
+    for line in (status.stdout or "").splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        changed.append(path)
+    diff = _git("diff", "--binary", cwd=worktree).stdout or ""
+    if len(diff) > MAX_PATCH_CHARS:
+        diff = diff[:MAX_PATCH_CHARS] + "\n…[diff truncated]\n"
+    _git("reset", "-q", cwd=worktree)
+    return sorted(changed), diff
+
+
+def _run_pytest(worktree: Path, paths: list[str], timeout: float) -> dict[str, object]:
+    if not paths:
+        return {}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", *paths],
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=min(timeout, 120.0),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "detail": "pytest timed out"}
+    tail = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()
+    return {"ok": proc.returncode == 0, "detail": tail[-1] if tail else "", "rc": proc.returncode}
+
+
 def _result(envelope: TaskEnvelope, status: Status, **fields: Any) -> TaskResult:
     data: dict[str, Any] = {
         "id": envelope.id,
         "status": status,
         "model_requested": f"{envelope.family}:{envelope.label}",
+        "role": envelope.role,
         "effort_requested": envelope.effort,
     }
     data.update(fields)
@@ -217,6 +358,11 @@ class CodingAgentGateway:
             "codex": CodexCliAdapter(self.root),
         }
 
+    # -- role enforcement -------------------------------------------------
+    def _advice_guard(self, before: dict[str, str]) -> list[str]:
+        after = _git_status(self.root)
+        return sorted(set(after) - set(before))
+
     def run(self, envelope: TaskEnvelope, prompt: str) -> TaskResult:
         if envelope.phase != Phase.BUILD:
             return _result(
@@ -232,6 +378,11 @@ class CodingAgentGateway:
             )
 
         try:
+            enforce_role(envelope.family, envelope.role.value)
+        except RoutingDenied as exc:
+            return _result(envelope, Status(exc.status), limitations=[exc.reason])
+
+        try:
             route = resolve_build_route(
                 envelope.family,
                 envelope.label,
@@ -243,9 +394,10 @@ class CodingAgentGateway:
         except RoutingDenied as exc:
             return _result(envelope, Status(exc.status), limitations=[exc.reason])
 
+        implements = envelope.role is Role.IMPLEMENT
         try:
             self.budget.begin_call(route.key)
-            timeout = self.budget.call_timeout(envelope.timeout_s)
+            timeout = self.budget.call_timeout(envelope.timeout_s, implementation=implements)
         except BudgetExceeded as exc:
             return _result(envelope, Status.BLOCKED, limitations=[str(exc)])
 
@@ -257,9 +409,23 @@ class CodingAgentGateway:
                 limitations=[f"no adapter registered for {route.family}"],
             )
 
+        if implements:
+            return self._run_implementation(envelope, route, adapter, prompt, timeout)
+        return self._run_advisory(envelope, route, adapter, prompt, timeout)
+
+    def _run_advisory(
+        self,
+        envelope: TaskEnvelope,
+        route: Route,
+        adapter: Adapter,
+        prompt: str,
+        timeout: float,
+    ) -> TaskResult:
+        """Advice and review: no worktree, and the tree must stay untouched."""
+        before = _git_status(self.root)
         started = time.monotonic()
         try:
-            out = adapter.run(envelope, route, prompt, timeout)
+            out = adapter.run(envelope, route, prompt, timeout, self.root)
         except AdapterError as exc:
             return _result(
                 envelope,
@@ -267,26 +433,28 @@ class CodingAgentGateway:
                 limitations=[str(exc)],
                 duration_s=time.monotonic() - started,
             )
-
         self.budget.record(out.cost_usd)
-        bad_paths = [p for p in out.changed_files if not _path_allowed(p, envelope.permitted_paths)]
+        touched = self._advice_guard(before)
         limitation = out.note
-        if bad_paths:
+        if touched:
             status = Status.BLOCKED
-            limitation = f"patch touches forbidden paths: {bad_paths}"
+            limitation = (
+                f"{envelope.role.value} role may not modify the repository; changed: {touched[:10]}"
+            )
         elif not out.text.strip():
             status = Status.FAILED
             limitation = (limitation + "; empty output").strip("; ")
         else:
             status = Status.COMPLETED
-
+        if out is None:  # pragma: no cover - guarded by the except above
+            return _result(envelope, Status.FAILED, limitations=["adapter produced no output"])
         return _result(
             envelope,
             status,
             model_actual=f"{route.family}:{route.label}",
             effort_actual=route.effort,
             output=_truncate(out.text, self.limits.max_output_chars),
-            changed_files=out.changed_files,
+            changed_files=touched,
             usage={
                 "input_tokens": out.input_tokens,
                 "output_tokens": out.output_tokens,
@@ -295,4 +463,110 @@ class CodingAgentGateway:
             limitations=[limitation] if limitation else [],
             cost_usd=out.cost_usd,
             duration_s=out.duration_s,
+        )
+
+    def _run_implementation(
+        self,
+        envelope: TaskEnvelope,
+        route: Route,
+        adapter: Adapter,
+        prompt: str,
+        timeout: float,
+    ) -> TaskResult:
+        """Implementation: isolated worktree, captured diff, path check first."""
+        started = time.monotonic()
+        status = Status.FAILED
+        limitation = ""
+        changed: list[str] = []
+        diff = ""
+        tests: dict[str, object] = {}
+        out: AdapterOutput | None = None
+        try:
+            worktree = _worktree_add(self.root, envelope.id)
+        except WorktreeError as exc:
+            return _result(envelope, Status.FAILED, limitations=[str(exc)])
+        try:
+            out = adapter.run(envelope, route, prompt, timeout, worktree)
+            self.budget.record(out.cost_usd)
+            changed, diff = _collect_changes(worktree)
+            bad = reject_outside_paths(changed, envelope.permitted_paths)
+            patch_path: str | None = None
+            integrated = False
+            if diff.strip():
+                safe_id = "".join(ch if ch.isalnum() or ch in "-._" else "-" for ch in envelope.id)
+                patch_dir = self.root / "runs" / safe_id
+                patch_dir.mkdir(parents=True, exist_ok=True)
+                patch_file = patch_dir / "impl.patch"
+                patch_file.write_text(diff, encoding="utf-8")
+                patch_path = str(patch_file)
+            if bad:
+                # Out-of-bounds code is never executed and never integrated.
+                status = Status.BLOCKED
+                limitation = f"changes outside permitted paths: {bad}"
+            elif not changed:
+                status = Status.FAILED
+                limitation = "implementation produced no file changes"
+            else:
+                tests = _run_pytest(worktree, envelope.pytest_paths, timeout)
+                if tests and not tests.get("ok"):
+                    status = Status.COMPLETED
+                    limitation = f"{out.note}; pytest failed: {tests.get('detail', '')}".strip("; ")
+                else:
+                    status = Status.COMPLETED
+                    limitation = out.note
+            if status is Status.COMPLETED and envelope.integrate and diff.strip():
+                check = subprocess.run(
+                    ["git", "apply", "--check", "-"],
+                    cwd=str(self.root),
+                    input=diff,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if check.returncode == 0:
+                    subprocess.run(
+                        ["git", "apply", "-"],
+                        cwd=str(self.root),
+                        input=diff,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    integrated = True
+                else:
+                    limitation = (
+                        f"{limitation}; patch did not apply cleanly: "
+                        f"{strip_ansi(check.stderr)[-200:]}"
+                    ).strip("; ")
+        except AdapterError as exc:
+            return _result(
+                envelope,
+                Status.FAILED,
+                limitations=[str(exc)],
+                duration_s=time.monotonic() - started,
+            )
+        finally:
+            _worktree_remove(self.root, worktree)
+
+        if out is None:  # pragma: no cover - guarded by the except above
+            return _result(envelope, Status.FAILED, limitations=["adapter produced no output"])
+        return _result(
+            envelope,
+            status,
+            model_actual=f"{route.family}:{route.label}",
+            effort_actual=route.effort,
+            output=_truncate(out.text, self.limits.max_output_chars),
+            changed_files=changed,
+            tests=tests,
+            diff=diff,
+            patch_path=patch_path,
+            integrated=integrated,
+            usage={
+                "input_tokens": out.input_tokens,
+                "output_tokens": out.output_tokens,
+                "cost_usd": out.cost_usd,
+            },
+            limitations=[limitation] if limitation else [],
+            cost_usd=out.cost_usd,
+            duration_s=time.monotonic() - started,
         )

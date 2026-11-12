@@ -21,6 +21,7 @@ class Limits:
     max_delegate_calls_per_run: int = 8
     max_usd_per_run: float = 2.0
     per_call_timeout_seconds: float = 120.0
+    implementation_timeout_seconds: float = 300.0
     coordinator_timeout_seconds: float = 120.0
     max_output_chars: int = 20000
     max_prompt_chars: int = 24000
@@ -36,6 +37,7 @@ _ENV_OVERRIDES = {
     "max_delegate_calls_per_run": ("VSW_MAX_DELEGATE_CALLS", int),
     "max_usd_per_run": ("VSW_MAX_USD", float),
     "per_call_timeout_seconds": ("VSW_PER_CALL_TIMEOUT", float),
+    "implementation_timeout_seconds": ("VSW_IMPLEMENTATION_TIMEOUT", float),
     "coordinator_timeout_seconds": ("VSW_COORDINATOR_TIMEOUT", float),
     "max_output_chars": ("VSW_MAX_OUTPUT_CHARS", int),
     "max_prompt_chars": ("VSW_MAX_PROMPT_CHARS", int),

@@ -89,3 +89,24 @@ def test_delegate_dry_run_rejects_cyber_model():
     )
     assert proc.returncode == 1
     assert json.loads(proc.stdout)["decision"] == "blocked"
+
+
+def test_delegate_dry_run_rejects_crossed_roles():
+    proc = _run(
+        "delegate",
+        "--model",
+        "claude",
+        "--label",
+        "opus",
+        "--effort",
+        "medium",
+        "--role",
+        "implement",
+        "--prompt",
+        "do it",
+        "--dry-run",
+    )
+    assert proc.returncode == 1
+    payload = json.loads(proc.stdout)
+    assert payload["decision"] == "blocked"
+    assert "may not take" in payload["reason"]

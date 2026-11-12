@@ -1,0 +1,119 @@
+"""The proxy, not the request interceptor, decides what leaves the machine.
+
+Playwright follows a server-side redirect itself and opens the connection
+before the route handler is asked, so these tests assert on the off-list
+origin's own request log, not on a blocked-request list.
+"""
+
+from __future__ import annotations
+
+import http.client
+from pathlib import Path
+from urllib.parse import quote
+
+import pytest
+
+from vsw.adapters.browser import BrowserAdapter
+from vsw.adapters.proxy import GuardedProxy
+from vsw.evidence import EvidenceStore
+from vsw.scope import ScopeGuard, load_engagement
+
+
+def proxy_get(proxy: GuardedProxy, url: str, method: str = "GET") -> tuple[int, bytes]:
+    host, port = proxy.url.removeprefix("http://").split(":")
+    connection = http.client.HTTPConnection(host, int(port), timeout=10)
+    try:
+        connection.request(method, url)
+        response = connection.getresponse()
+        return response.status, response.read()
+    finally:
+        connection.close()
+
+
+@pytest.fixture
+def guard(manifest) -> ScopeGuard:
+    return ScopeGuard(load_engagement(manifest()))
+
+
+def test_in_scope_request_is_forwarded(guard: ScopeGuard, lab_server: str) -> None:
+    with GuardedProxy(guard) as proxy:
+        status, body = proxy_get(proxy, f"{lab_server}/vuln/echo?q=proxy-ok")
+    assert status == 200
+    assert b"proxy-ok" in body
+    assert guard.requests == 1
+    assert proxy.blocked == []
+
+
+def test_off_list_origin_is_refused_without_connecting(
+    guard: ScopeGuard, offlist_server: dict
+) -> None:
+    with GuardedProxy(guard) as proxy:
+        status, body = proxy_get(proxy, f"{offlist_server['url']}/steal")
+    assert status == 403
+    assert b"origin" in body
+    assert offlist_server["hits"] == []
+    assert proxy.blocked and proxy.blocked[0]["url"].endswith("/steal")
+    assert guard.blocked[0]["kind"] == "proxy"
+
+
+def test_https_tunnelling_is_refused(guard: ScopeGuard) -> None:
+    with GuardedProxy(guard) as proxy:
+        status, _ = proxy_get(proxy, "example.invalid:443", method="CONNECT")
+    assert status == 403
+    assert guard.blocked and guard.blocked[0]["kind"] == "proxy"
+    assert "tunnel" in guard.blocked[0]["reason"]
+
+
+def test_path_outside_the_prefixes_is_refused(guard: ScopeGuard, lab_server: str) -> None:
+    with GuardedProxy(guard) as proxy:
+        status, _ = proxy_get(proxy, f"{lab_server}/robots.txt")
+    assert status == 403
+    assert "not approved" in proxy.blocked[0]["reason"]
+
+
+OFFLIST_ROUTES = (
+    "/vuln/open-redirect?to={target}",
+    "/vuln/offlist-meta?to={target}",
+    "/vuln/offlist-js?to={target}",
+    "/vuln/offlist-iframe?to={target}",
+)
+
+
+@pytest.mark.parametrize("route", OFFLIST_ROUTES)
+def test_browser_never_connects_to_an_off_list_origin(
+    route: str,
+    tmp_path: Path,
+    manifest,
+    lab_server: str,
+    offlist_server: dict,
+) -> None:
+    target = f"{offlist_server['url']}/steal"
+    engagement = load_engagement(manifest())
+    guard = ScopeGuard(engagement)
+    store = EvidenceStore(tmp_path / "evidence")
+    adapter = BrowserAdapter(guard=guard, store=store, engagement=engagement, timeout_ms=8000)
+
+    seed = f"{lab_server}{route.format(target=quote(target, safe=':/'))}"
+    records = adapter.execute(adapter.plan([seed]))
+
+    assert offlist_server["hits"] == [], f"{route} reached the off-list origin"
+    assert any(target.split("/steal")[0] in item["url"] for item in guard.blocked), guard.blocked
+    # Evidence still records what was observed, and says what was stopped.
+    assert records
+    notes = records[0].notes
+    assert notes["proxy_blocked"] or any(item.get("blocked") for item in notes["requests"])
+
+
+def test_non_chromium_engine_is_refused(manifest, tmp_path: Path) -> None:
+    from vsw.adapters.base import AdapterUnavailable
+
+    engagement = load_engagement(manifest())
+    adapter = BrowserAdapter(
+        guard=ScopeGuard(engagement),
+        store=EvidenceStore(tmp_path / "evidence"),
+        engagement=engagement,
+        browser_name="webkit",
+    )
+    with pytest.raises(AdapterUnavailable) as exc:
+        adapter.validate_config()
+    assert "redirect hops" in str(exc.value)

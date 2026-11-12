@@ -44,13 +44,31 @@ class Budget:
                 f"spend limit reached: ${self.spent_usd:.4f} >= ${self.limits.max_usd_per_run:.2f}"
             )
 
-    def call_timeout(self, requested: float | None = None) -> float:
-        timeout = requested or self.limits.per_call_timeout_seconds
-        timeout = min(timeout, self.limits.per_call_timeout_seconds)
+    def call_timeout(
+        self, requested: float | None = None, *, implementation: bool = False
+    ) -> float:
+        """Advice and review stay short; implementation gets a longer window."""
+        cap = (
+            self.limits.implementation_timeout_seconds
+            if implementation
+            else self.limits.per_call_timeout_seconds
+        )
+        timeout = requested or cap
+        timeout = min(timeout, cap)
         remaining = self.remaining_seconds()
         if remaining <= 0:
             raise BudgetExceeded("no wall-clock budget remains")
         return min(timeout, remaining)
+
+    def reset_clock(self) -> None:
+        """Start a fresh wall-clock window, keeping cumulative calls and spend.
+
+        The coordinator may sit idle between delegated tasks; idle time must not
+        consume a task's wall-clock budget. Calls and spend stay cumulative so
+        run-level limits still hold.
+        """
+        with self._lock:
+            self.started = time.monotonic()
 
     def begin_call(self, model: str) -> None:
         with self._lock:

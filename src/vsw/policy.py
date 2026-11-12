@@ -41,6 +41,23 @@ BUILD_ROUTES: dict[tuple[str, str, str], str] = {
 
 ESCALATION_ROUTES = {("claude", "opus", "high")}
 
+# Role separation is a policy, not a prompt convention: Claude advises in text
+# only, Codex owns repository implementation and independent review.
+ROLE_ALLOWLIST = {
+    "claude": {"advice"},
+    "codex": {"implement", "review"},
+}
+
+
+def enforce_role(family: str, role: str) -> None:
+    allowed = ROLE_ALLOWLIST.get(family.strip().lower(), set())
+    if role not in allowed:
+        raise RoutingDenied(
+            "blocked",
+            f"{family} may not take the {role} role; allowed: {sorted(allowed)}",
+        )
+
+
 CYBER_ONLY_LABELS = {"gpt-6-sol", "gpt-6-luna", "luna", "luna-max", "sol-max"}
 DISALLOWED_BUILD_LABELS = {"terra", "haiku", "gpt-6.1-terra"}
 DISALLOWED_BUILD_EFFORTS = {"low", "xhigh", "max"}

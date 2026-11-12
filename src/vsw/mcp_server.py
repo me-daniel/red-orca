@@ -9,7 +9,7 @@ from typing import Any
 from .budget import Budget
 from .coding_agent_gateway import CodingAgentGateway
 from .config import load_limits, repo_root
-from .domain import Phase, TaskEnvelope
+from .domain import Phase, Role, TaskEnvelope
 from .policy import BUILD_ROUTES, RoutingDenied, resolve_build_route
 from .util import utc_now
 
@@ -19,13 +19,18 @@ SERVER_VERSION = "0.1.0"
 _TOOLS = [
     {
         "name": "delegate_claude",
-        "description": "Delegate build work to Claude Code (allowlisted models only).",
+        "description": (
+            "Ask Claude Code for text-only advice on an unclear architecture or "
+            "implementation decision that is not cybersecurity-specific. One turn, "
+            "no tools, no repository changes: a call that edits files is rejected. "
+            "Claude does not implement or review code here."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "prompt": {"type": "string"},
-                "label": {"type": "string", "default": "sonnet"},
-                "effort": {"type": "string", "default": "high"},
+                "label": {"type": "string", "default": "opus"},
+                "effort": {"type": "string", "default": "medium"},
                 "budget_usd": {"type": "number", "default": 0.5},
                 "timeout_seconds": {"type": "number"},
                 "escalation_reason": {"type": "string"},
@@ -36,15 +41,37 @@ _TOOLS = [
     },
     {
         "name": "delegate_codex",
-        "description": "Delegate build work to Codex (allowlisted models only).",
+        "description": (
+            "Implement repository changes, or review them independently. Implementation "
+            "runs in a separate git worktree, returns the changed files and diff, and is "
+            "blocked when a change falls outside permitted_paths; pass integrate=true to "
+            "apply a clean, in-bounds patch. Review is read-only and must not edit files. "
+            "Codex does not give free-form architecture advice here."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "prompt": {"type": "string"},
+                "role": {
+                    "type": "string",
+                    "enum": ["implement", "review"],
+                    "default": "implement",
+                },
                 "label": {"type": "string", "default": "gpt-6.1-sol"},
                 "effort": {"type": "string", "default": "high"},
                 "budget_usd": {"type": "number", "default": 0.5},
                 "timeout_seconds": {"type": "number"},
+                "permitted_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Glob patterns an implementation may touch.",
+                },
+                "pytest_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Test paths to run inside the worktree.",
+                },
+                "integrate": {"type": "boolean", "default": False},
                 "escalation_reason": {"type": "string"},
             },
             "required": ["prompt"],
@@ -109,25 +136,43 @@ class Server:
             return self._call(request_id, params)
         return _err(request_id, -32601, f"method not found: {method}")
 
+    def _timeout(self, args: dict[str, Any], role: Role) -> float:
+        """Role-aware default: implementation gets the longer window."""
+        requested = args.get("timeout_seconds")
+        if requested:
+            return float(requested)
+        if role is Role.IMPLEMENT:
+            return self.limits.implementation_timeout_seconds
+        return self.limits.per_call_timeout_seconds
+
     def _call(self, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
         args = params.get("arguments") or {}
         try:
             if name in {"delegate_claude", "delegate_codex"}:
+                self.budget.reset_clock()
                 family = "claude" if name == "delegate_claude" else "codex"
+                if family == "claude":
+                    role = Role.ADVICE
+                    label = str(args.get("label") or "opus")
+                    effort = str(args.get("effort") or "medium")
+                else:
+                    role = Role(str(args.get("role") or "implement"))
+                    label = str(args.get("label") or "gpt-6.1-sol")
+                    effort = str(args.get("effort") or "high")
                 envelope = TaskEnvelope(
                     id=f"mcp-{utc_now()}-{family}",
-                    purpose="delegated build task",
+                    purpose=f"delegated build {role.value} task",
                     phase=Phase.BUILD,
                     family=family,
-                    label=str(
-                        args.get("label") or ("sonnet" if family == "claude" else "gpt-6.1-sol")
-                    ),
-                    effort=str(args.get("effort") or "high"),
+                    label=label,
+                    effort=effort,
+                    role=role,
                     budget_usd=float(args.get("budget_usd") or self.limits.max_task_budget_usd),
-                    timeout_s=float(
-                        args.get("timeout_seconds") or self.limits.per_call_timeout_seconds
-                    ),
+                    timeout_s=self._timeout(args, role),
+                    permitted_paths=list(args.get("permitted_paths") or []),
+                    pytest_paths=list(args.get("pytest_paths") or []),
+                    integrate=bool(args.get("integrate")),
                     escalation_reason=args.get("escalation_reason"),
                 )
                 result = self.gateway.run(envelope, str(args.get("prompt", "")))
