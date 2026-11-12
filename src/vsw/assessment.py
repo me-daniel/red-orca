@@ -169,6 +169,8 @@ def _validate_plan(
         checks = ["passive-http", "browser"] if use_browser else ["passive-http"]
     if not use_browser:
         checks = [item for item in checks if item != "browser"] or ["passive-http"]
+    if "passive-http" not in checks:
+        checks.insert(0, "passive-http")
 
     focus = [redact_text(item.strip())[:200] for item in plan.focus[:MAX_FOCUS_ITEMS] if item.strip()]
     return (
