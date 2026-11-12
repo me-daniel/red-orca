@@ -4,7 +4,7 @@ import pytest
 
 from vsw.budget import Budget, BudgetExceeded
 from vsw.config import Limits
-from vsw.policy import RoutingDenied, resolve_build_route, runtime_route
+from vsw.policy import RUNTIME_ROLES, RoutingDenied, resolve_build_route, runtime_route
 
 LIMITS = Limits()
 
@@ -68,6 +68,13 @@ def test_runtime_cyber_routes_are_disabled():
     with pytest.raises(RoutingDenied) as exc:
         runtime_route("evidence_review")
     assert exc.value.status == "blocked"
+
+
+def test_runtime_cyber_routes_use_codex_exec():
+    assert RUNTIME_ROLES["planning"]["transport"] == "model_gateway"
+    assert RUNTIME_ROLES["triage"]["transport"] == "model_gateway"
+    assert RUNTIME_ROLES["evidence_review"]["transport"] == "codex_exec"
+    assert RUNTIME_ROLES["independent_review"]["transport"] == "codex_exec"
 
 
 def test_budget_reset_clock_keeps_calls_and_spend():

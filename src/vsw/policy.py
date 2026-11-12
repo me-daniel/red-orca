@@ -120,10 +120,30 @@ def resolve_build_route(
 # Assessment-time roles are defined here but disabled during build. M4 enables
 # them behind an explicit opt-in; MODEL_ROUTING.md keeps them out of build work.
 RUNTIME_ROLES: dict[str, dict[str, object]] = {
-    "planning": {"model": "deepseek-v4.1-flash", "effort": "high", "enabled": False},
-    "triage": {"model": "glm-5.3-flash", "effort": "high", "enabled": False},
-    "evidence_review": {"model": "gpt-6-sol", "effort": "max", "enabled": False},
-    "independent_review": {"model": "gpt-6-luna", "effort": "max", "enabled": False},
+    "planning": {
+        "model": "deepseek-v4.1-flash",
+        "effort": "high",
+        "transport": "model_gateway",
+        "enabled": False,
+    },
+    "triage": {
+        "model": "glm-5.3-flash",
+        "effort": "high",
+        "transport": "model_gateway",
+        "enabled": False,
+    },
+    "evidence_review": {
+        "model": "gpt-6-sol",
+        "effort": "max",
+        "transport": "codex_exec",
+        "enabled": False,
+    },
+    "independent_review": {
+        "model": "gpt-6-luna",
+        "effort": "max",
+        "transport": "codex_exec",
+        "enabled": False,
+    },
 }
 
 

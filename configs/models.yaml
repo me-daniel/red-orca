@@ -7,6 +7,10 @@
 #
 # Exact model IDs were checked against the provider model lists on 2026-11-12.
 # No alias, fallback, or silent substitution is applied.
+#
+# Sol and Luna are intentionally absent: later cyber runs invoke them through
+# the local `codex exec` CLI under RED_MODEL_ROUTING.md, not through this
+# gateway and not through OpenRouter.
 
 providers:
   opencode-go:
@@ -52,23 +56,6 @@ routes:
     max_tokens: 4096
     enabled: false
     purpose: Evaluated fallback for triage when the Go GLM route is unavailable.
-  sol:
-    provider: openrouter
-    model: openai/gpt-6-sol
-    effort: max
-    max_tokens: 4096
-    enabled: false
-    purpose: Consequential evidence and validation review; later cyber runs only.
-  luna:
-    provider: openrouter
-    model: openai/gpt-6-luna
-    effort: max
-    max_tokens: 4096
-    enabled: false
-    purpose: >-
-      Independent review and evidence organization. OpenRouter carries Max
-      effort because Go chat completions cannot represent the unified reasoning
-      field for this Responses-native model.
   kimi:
     provider: opencode-go
     model: kimi-k3.1-pro

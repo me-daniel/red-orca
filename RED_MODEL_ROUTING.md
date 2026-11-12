@@ -37,11 +37,14 @@ it. Enabling is a separate edit after the fixture comparison below.
 | `plan-openrouter` | OpenRouter | `deepseek/deepseek-v4.1-flash-1017` | High | Evaluated fallback |
 | `triage` | OpenCode Go | `glm-5.3-flash` | High | Scanner and dependency triage |
 | `triage-openrouter` | OpenRouter | `z-ai/glm-5.3-flash` | High | Evaluated fallback |
-| `sol` | OpenRouter | `openai/gpt-6-sol` | Max | Consequential review, later cyber runs only |
-| `luna` | OpenRouter | `openai/gpt-6-luna` | Max | Independent review, later cyber runs only |
 | `kimi` | OpenCode Go | `kimi-k3.1-pro` | Max | Named difficult-evidence route |
 | `gemini` | OpenRouter | `google/gemini-4-argon` | High | Optional media and document specialist |
 | `hy4` | OpenCode Go | `hy4` | High | Optional difficult-analysis route |
+
+Sol and Luna are **not** in this table and not ModelGateway routes. Later cyber
+runs invoke them through the local Codex CLI (`codex exec`), using the CLI's own
+ChatGPT authentication. They do not use OpenCode, OpenRouter, or an OpenAI API
+key in the normal path, and they remain later-cyber-run only.
 
 Keys are read from `OPENCODE_API_KEY` and `OPENROUTER_API_KEY`. `.env` is
 loaded at startup, is gitignored, and is never printed. The Go endpoint is
@@ -61,8 +64,9 @@ Provider limits that affect a route:
 - Go reports charged cost in `usage.cost` (0 inside the subscription) and the
   consumed allowance in `usage.opencode.allowance`. Both are recorded; an
   allowance is not the same as a charge.
-- Sol and Luna remain later-cyber-run reviewers. Configuring a transport does
-  not authorize a cyber run or change tool permissions.
+- Sol and Luna remain later-cyber-run reviewers and are called through
+  `codex exec`, not this gateway. Configuring a transport does not authorize a
+  cyber run or change tool permissions.
 
 `vsw models check` reports the route, response model, finish reason, latency,
 usage, charged cost, allowance, and whether usage was measured. A route with no
@@ -75,7 +79,7 @@ evaluation; label it as a live check, separately from mock results.
 1. Load an approved engagement and pin evidence/source revisions. Use a fixed checklist for one website; ask the primary model to adapt only when the system warrants it.
 2. Assign separate bounded goals: source/access controls, deployment/public responses, dependencies/scanner evidence. With only a URL, explicitly mark unavailable source/deployment coverage.
 3. Collect through registered checks and approved tools. Models cannot approve their own actions, install arbitrary tools, or expand scope.
-4. Send consequential findings to Sol Max and/or Luna Max. Obtain independent first judgments when using both; give each relevant context and evidence, not the other reviewer's conclusions. Adjudicate disagreement with additional evidence or a bounded check.
+4. Send consequential findings to Sol Max and/or Luna Max through the local `codex exec` CLI. Obtain independent first judgments when using both; give each relevant context and evidence, not the other reviewer's conclusions. Adjudicate disagreement with additional evidence or a bounded check.
 5. Produce findings using the brief's common schema and states. Model agreement cannot promote a hypothesis to `validated` without the required observable evidence.
 6. If source edits are authorized, open a separate remediation task routed through `MODEL_ROUTING.md`; use the selected build delegate in an isolated checkout. Runtime Sol/Luna may review the resulting evidence, but do not become repository-build delegates. Execute approved before/after regression checks and retain both results.
 

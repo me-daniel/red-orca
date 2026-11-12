@@ -310,8 +310,6 @@ def test_repository_routes_are_exact_and_disabled():
         "plan-openrouter": ("openrouter", "deepseek/deepseek-v4.1-flash-1017", "high"),
         "triage": ("opencode-go", "glm-5.3-flash", "high"),
         "triage-openrouter": ("openrouter", "z-ai/glm-5.3-flash", "high"),
-        "sol": ("openrouter", "openai/gpt-6-sol", "max"),
-        "luna": ("openrouter", "openai/gpt-6-luna", "max"),
         "kimi": ("opencode-go", "kimi-k3.1-pro", "max"),
         "gemini": ("openrouter", "google/gemini-4-argon", "high"),
         "hy4": ("opencode-go", "hy4", "high"),

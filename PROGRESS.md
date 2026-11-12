@@ -59,8 +59,9 @@ local Claude/Codex CLIs, and the local lab fixture.
 
 - `ModelGateway` implements the deterministic mock, OpenRouter, and generic
   OpenAI-compatible transports. The OpenCode Go subscription is the primary
-  compatible endpoint; OpenRouter carries Sol, Luna, Gemini, and the evaluable
-  DeepSeek/GLM fallbacks.
+  compatible endpoint; OpenRouter carries Gemini and the evaluable DeepSeek/GLM
+  fallbacks. Sol and Luna are not gateway routes: later cyber runs call them
+  through the local `codex exec` CLI.
 - `configs/models.yaml` pins exact model IDs and efforts. Every route is
   disabled. `vsw models list` shows route state and whether the provider key is
   set without printing the key. `vsw models check <route>` calls one disabled
@@ -72,11 +73,14 @@ local Claude/Codex CLIs, and the local lab fixture.
   optional; mock work needs no credentials.
 - Live checks on 2026-11-12 (connectivity and accounting only, not fixture
   evaluations): Go `triage`, `kimi`, and `hy4`; OpenRouter `plan-openrouter`,
-  `triage-openrouter`, `luna`, `sol`, and `gemini` returned usage and a measured
-  cost or allowance. Go `plan` was initially refused because DeepSeek needed
-  Global regions in the Console privacy settings; after the workspace region was
-  set to Global, `vsw models check plan` returned usage and a Go allowance.
+  `triage-openrouter`, and `gemini` returned usage and a measured cost or
+  allowance. Go `plan` was initially refused because DeepSeek needed Global
+  regions in the Console privacy settings; after the workspace region was set to
+  Global, `vsw models check plan` returned usage and a Go allowance.
   `plan-openrouter` remains the explicit fallback.
+- Sol and Luna are invoked through `codex exec` under the later cyber-run
+  policy, not through this gateway. They use the Codex CLI's ChatGPT login and
+  are not exercised in this build.
 
 ## Live, mocked, blocked
 

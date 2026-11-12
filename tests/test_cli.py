@@ -125,7 +125,7 @@ def test_models_list_shows_disabled_routes_without_secrets():
     routes = {route["name"]: route for route in data["routes"]}
     assert routes["plan"]["enabled"] is False
     assert routes["plan"]["model"] == "deepseek-v4.1-flash"
-    assert routes["sol"]["model"] == "openai/gpt-6-sol"
+    assert routes["gemini"]["model"] == "google/gemini-4-argon"
     assert routes["plan"]["key_present"] is False
     assert "sk-" not in proc.stdout
 
