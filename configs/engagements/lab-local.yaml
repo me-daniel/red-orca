@@ -5,7 +5,7 @@ authorization_ref: local fixture, repo-owned; no third-party system
 profile: lab
 expires_at: '2027-01-01T00:00:00Z'
 origins:
-- http://127.0.0.1:8787
+- http://127.0.0.1:8789
 methods:
 - GET
 path_prefixes:
@@ -21,5 +21,5 @@ max_concurrency: 1
 approval:
   approved: true
   approved_by: daniel
-  approved_at: '2026-11-12T01:58:26Z'
-  approved_manifest_sha256: 0577f8f7cac3e27bdce30b51870d94cc2192595d3f36d9237b8d3b51dce0a754
+  approved_at: '2026-11-12T22:26:12Z'
+  approved_manifest_sha256: a9022bc5c13fa2506a3c6f2686ca970e5165c74caef30909caed6e5bf19a86b2

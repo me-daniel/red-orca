@@ -141,15 +141,34 @@ local Claude/Codex CLIs, and the local lab fixture.
 - `plan` and `triage` are enabled for local lab/observe. Fallback and optional
   routes remain disabled.
 
+## M2 validation candidate (not integrated)
+
+- Prepared opt-in, loopback-lab-only HTML injection and open redirect checks,
+  a `vsw validate` command, clean controls, and capture-linked reproduction.
+- Independent review requested changes for ambiguous HTML parsing and HTTPX
+  request normalization. The corrected candidate rejects uncertain script/frameset
+  contexts and captures the actual dispatched request and response metadata.
+- Candidate verification: 320 tests passed, Ruff passed, and mypy passed on
+  26 source files. Focused tests include real loopback HTTP and mocked transports;
+  local Chromium comparisons checked the identified parser boundaries.
+- Corrected patch remains under `runs/m2-parserfix/impl.patch`, outside the main
+  source tree. The user approved a ninth read-only review after the eight-call
+  limit; it requested changes for response charset handling: ASCII probe bytes
+  declared as UTF-16LE can be misread as UTF-8 and falsely validated. Encoding/BOM
+  guards, regression tests, and independent re-review are required. No integration,
+  commit, or push occurred.
+- AntiFox integration and Strix comparison remain pending; this does not complete M2.
+
 ## Live, mocked, blocked
 
 | Item | State |
 |---|---|
 | DeepSeek coordinator via OpenCode | live |
 | Claude Opus Medium advice, Codex Sol High implement/review | live (local CLI auth) |
-| Lab fixture, passive HTTP, Playwright Chromium + scope proxy | live, loopback only |
-| AntiFox / Strix | blocked: no container runtime |
-| M2 validation checks | not started |
+| Lab fixture, passive HTTP, Playwright Chromium + scope proxy | live, loopback only; fixture default `127.0.0.1:8789` avoids AntiFox 8787/8788 |
+| Container runtime for M2 | verified 2026-11-12: Colima running, Docker server 29.5.2 (aarch64), Compose 5.7.1 |
+| AntiFox / Strix | integration and engine-boundary validation pending; container runtime available |
+| M2 validation checks | tested candidate; independent re-review and integration pending |
 | Runtime model routes (OpenCode Go, OpenRouter) | `plan`/`triage` enabled for lab/observe after live evaluation; other routes disabled |
 
 ## Known limits

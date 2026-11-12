@@ -14,8 +14,8 @@ uv run vsw doctor                 # toolchain, config, skills, routing, lab, bro
 uv run vsw demo                   # deterministic mock demo
 uv run vsw smoke --mock           # Claude advises, Codex implements, Codex reviews (mock)
 uv run vsw smoke --live           # same flow through the real CLIs
-uv run vsw lab up                 # local fixtures on 127.0.0.1:8787
-uv run vsw run --target http://127.0.0.1:8787/vuln/   # observe, capture, report
+uv run vsw lab up                 # local fixtures on 127.0.0.1:8789
+uv run vsw run --target http://127.0.0.1:8789/vuln/   # observe, capture, report
 uv run vsw findings               # list findings from the latest run
 uv run vsw report                 # paths to the latest report
 uv run vsw lab down

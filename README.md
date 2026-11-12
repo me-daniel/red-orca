@@ -136,6 +136,16 @@ uv run vsw assess --mode mock    # plan → observe → triage, no credentials
 uv run vsw assess --mode live    # same loop through the enabled Go routes
 ```
 
+The vsw lab uses loopback port **8789**, so it can coexist with AntiFox's UI on
+8787 and proxy on 8788. `--port` overrides the lab port; a busy port fails without
+fallback. Engagement origins are pinned, so an override needs a matching approved manifest.
+
+```bash
+uv run vsw lab up
+uv run vsw run --target http://127.0.0.1:8789/vuln/
+uv run vsw lab down
+```
+
 Stage: **M1 local HTTP observation plus lean multi-agent assessment**. `vsw lab up`,
 `vsw run`, and `vsw report` inspect a local fixture, capture hashed evidence, and
 produce a report; the clean control produces no findings. `vsw assess` adds a

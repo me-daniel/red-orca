@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+DEFAULT_LAB_PORT = 8789
+
 
 def repo_root() -> Path:
     env = os.environ.get("VSW_ROOT")

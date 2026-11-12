@@ -14,7 +14,7 @@ import typer
 from .assessment import AssessmentError, run_assessment
 from .budget import Budget
 from .coding_agent_gateway import CodingAgentGateway, apply_reviewed_patch
-from .config import load_env_file, load_limits, repo_root
+from .config import DEFAULT_LAB_PORT, load_env_file, load_limits, repo_root
 from .domain import Role, TaskEnvelope
 from .model_gateway import (
     ModelRoute,
@@ -495,7 +495,7 @@ APPROVER_OPTION = typer.Option(..., "--approver", help="Human approving this sco
 
 
 @lab_app.command("up")
-def lab_up(port: int = typer.Option(8787, "--port")) -> None:
+def lab_up(port: int = typer.Option(DEFAULT_LAB_PORT, "--port")) -> None:
     """Start the lab fixture in the background."""
     from .lab import start_lab
 
