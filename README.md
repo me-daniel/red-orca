@@ -1,5 +1,9 @@
 # Red Orca Pod
 
+<p align="center">
+  <img src="assets/banner.svg" alt="Red Orca Pod — an open-weights cyber agent for red teams" width="100%">
+</p>
+
 **An open, model-agnostic cyber agent for red teams — built so you don't need access to Mythos or any other closed cyber model to defend against the threats that use them.**
 
 ---

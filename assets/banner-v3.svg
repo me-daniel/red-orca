@@ -1,0 +1,271 @@
+<svg viewBox="0 0 1200 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Red Orca Pod — many models, one pod">
+  <style>
+    @keyframes bob { 0%,100% { transform: translate(0,0) } 50% { transform: translate(-5px,-7px) } }
+    @keyframes bob2 { 0%,100% { transform: translate(0,0) } 50% { transform: translate(4px,6px) } }
+    @keyframes rise { 0% { transform: translate(0,14px); opacity:0 } 25% { opacity:.7 } 100% { transform: translate(10px,-70px); opacity:0 } }
+    @keyframes ping { 0%,100% { opacity:.12 } 30% { opacity:1 } }
+    @keyframes shimmer { 0%,100% { opacity:.55 } 50% { opacity:1 } }
+    @keyframes pulse { 0%,100% { opacity:.55 } 50% { opacity:.95 } }
+    @keyframes drift { 0%,100% { transform: translate(0,0) } 50% { transform: translate(9px,-6px) } }
+    @keyframes swell { 0%,100% { transform: translateX(0) } 50% { transform: translateX(-26px) } }
+    .lead { animation: bob 7s ease-in-out infinite }
+    .m1 { animation: bob2 6s ease-in-out infinite } .m2 { animation: bob 8s ease-in-out infinite -2s }
+    .m3 { animation: bob2 9s ease-in-out infinite -4s } .m4 { animation: bob 10s ease-in-out infinite -1s }
+    .bub { animation: rise 4.5s linear infinite } .b1 { animation-delay:-1.5s } .b2 { animation-delay:-3s }
+    .ping { animation: ping 2.6s ease-out infinite } .p1 { animation-delay:.25s } .p2 { animation-delay:.5s }
+    .rays { animation: shimmer 9s ease-in-out infinite } .eyeglow { animation: pulse 3.2s ease-in-out infinite }
+    .drift { animation: drift 11s ease-in-out infinite } .d1 { animation-duration:14s; animation-delay:-3s }
+    .d2 { animation-duration:17s; animation-delay:-6s } .d3 { animation-duration:9s; animation-delay:-2s }
+    .swell { animation: swell 12s ease-in-out infinite } .school { animation: bob2 5s ease-in-out infinite }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important } }
+  </style>
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7a1220"/>
+      <stop offset="0.22" stop-color="#4a0b17"/>
+      <stop offset="0.6" stop-color="#1f060d"/>
+      <stop offset="1" stop-color="#080204"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.72" cy="-0.05" r="0.75">
+      <stop offset="0" stop-color="#ff7a5c" stop-opacity="0.95"/>
+      <stop offset="0.3" stop-color="#e0283a" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#b0182a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.72" cy="0.46" r="0.45">
+      <stop offset="0" stop-color="#c8283a" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#c8283a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="textfade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#080204" stop-opacity="0.8"/>
+      <stop offset="0.28" stop-color="#080204" stop-opacity="0.55"/>
+      <stop offset="0.44" stop-color="#080204" stop-opacity="0.2"/>
+      <stop offset="0.58" stop-color="#080204" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ray" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb49c" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#ffb49c" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1218"/>
+      <stop offset="0.35" stop-color="#0d0709"/>
+      <stop offset="1" stop-color="#050304"/>
+    </linearGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.55" stop-color="#1a0408" stop-opacity="0"/>
+      <stop offset="1" stop-color="#1a0408" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffc2b4" stop-opacity="0.85"/>
+      <stop offset="0.7" stop-color="#ff9a8a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ff9a8a" stop-opacity="0.25"/>
+    </linearGradient>
+    <radialGradient id="hot" cx="0.4" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#ff9a84"/>
+      <stop offset="0.5" stop-color="#ff3246"/>
+      <stop offset="1" stop-color="#d0162c"/>
+    </radialGradient>
+    <filter id="soft" x="-80%" y="-200%" width="260%" height="500%"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="blur1"><feGaussianBlur stdDeviation="1.2"/></filter>
+
+    <!-- orca, facing left, local box 0..670 x -20..305 -->
+    <path id="trunk" d="M0 170 C10 140 55 112 120 98 C170 88 215 82 255 80 L345 86
+             C410 94 470 108 520 118 C548 123 570 122 590 112
+             C606 100 626 80 640 62 C636 86 630 104 624 118
+             C640 128 656 148 666 174 C640 160 614 146 596 136
+             C560 150 510 176 450 196 C400 212 340 222 290 224 C250 226 215 224 190 220
+             L150 214 C100 208 45 196 14 184 C4 180 -2 176 0 170 Z"/>
+    <path id="finM" d="M250 82 C268 52 290 10 306 -12 C311 -19 317 -14 316 -4 C313 28 322 62 350 88 Z"/>
+    <path id="finF" d="M260 82 C282 60 304 42 326 36 C332 35 334 40 331 46 C324 60 330 76 348 88 Z"/>
+    <path id="pec" d="M198 214 C218 240 238 268 246 292 C248 302 238 305 228 299 C200 284 172 256 158 226 C154 218 151 210 149 202 Z"/>
+    <clipPath id="clip"><use href="#trunk"/></clipPath>
+    <path id="backM" d="M2 166 C12 140 55 112 120 98 C170 88 215 82 252 80 C268 52 290 10 306 -12 C311 -19 317 -14 316 -4" fill="none"/>
+    <path id="backF" d="M2 166 C12 140 55 112 120 98 C170 88 215 82 260 81 C282 60 304 42 326 36" fill="none"/>
+    <path id="tailrim" d="M520 118 C548 123 570 122 590 112 C606 100 626 80 640 62" fill="none"/>
+
+    <g id="marks">
+      <g clip-path="url(#clip)">
+        <path d="M-10 177 C40 190 100 200 150 204 C210 210 270 212 330 206 C370 200 398 186 420 168
+                 C438 154 456 148 476 148 C462 160 452 176 470 184 C500 190 540 166 580 146 L600 138 L600 330 L-10 330 Z" fill="#f6ebe7"/>
+        <rect x="-10" y="60" width="700" height="260" fill="url(#shade)"/>
+      </g>
+      <use href="#pec" fill="#070405"/>
+      <path d="M198 214 C218 240 238 268 246 292" fill="none" stroke="#ff9a8a" stroke-opacity="0.35" stroke-width="1.5"/>
+      <path d="M342 96 C374 94 414 106 438 122 C406 118 370 114 346 110 Z" fill="#b89a9c" opacity="0.5"/>
+      <path d="M6 176 C30 181 54 180 74 173" fill="none" stroke="#000" stroke-opacity="0.5" stroke-width="1.4"/>
+      <use href="#tailrim" stroke="#ff9a8a" stroke-opacity="0.5" stroke-width="2"/>
+    </g>
+
+    <g id="orca">
+      <use href="#finF" fill="#0d0709"/><use href="#trunk" fill="url(#body)"/>
+      <use href="#marks"/>
+      <ellipse cx="104" cy="136" rx="28" ry="11" transform="rotate(-12 104 136)" fill="#f6ebe7"/>
+      <use href="#backF" stroke="url(#rim)" stroke-width="3"/>
+    </g>
+    <g id="lead">
+      <use href="#finM" fill="#0d0709"/><use href="#trunk" fill="url(#body)"/>
+      <use href="#marks"/>
+      <ellipse class="eyeglow" cx="104" cy="136" rx="40" ry="18" transform="rotate(-12 104 136)" fill="#ff3246" opacity="0.8" filter="url(#soft)"/>
+      <ellipse cx="104" cy="136" rx="28" ry="11" transform="rotate(-12 104 136)" fill="url(#hot)"/>
+      <circle cx="67" cy="153" r="2.6" fill="#3a1c22"/><circle cx="66.3" cy="152.3" r="0.8" fill="#ffd0c4"/>
+      <use href="#backM" stroke="url(#rim)" stroke-width="1.8"/>
+    </g>
+    <path id="fish" d="M0 0 C5 -3.2 13 -3.2 19 0 L25 -3.5 L24 0 L25 3.5 L19 0 C13 3.2 5 3.2 0 0 Z" fill="#ffb7a6"/>
+  </defs>
+
+  <rect width="1200" height="640" fill="url(#sea)"/>
+  <rect width="1200" height="640" fill="url(#sun)"/>
+  <rect width="1200" height="640" fill="url(#halo)"/>
+
+  <!-- surface seen from below -->
+  <g class="swell" fill="none" stroke="#ffc9b4" stroke-linecap="round">
+    <path d="M520 14 C600 4 660 26 740 16 S880 6 960 18 S1100 26 1230 10" stroke-width="3" opacity="0.5"/>
+    <path d="M420 34 C520 24 600 44 700 36 S860 22 950 40 S1120 44 1230 32" stroke-width="2" opacity="0.28"/>
+    <path d="M620 56 C700 48 770 64 850 58 S990 48 1090 62" stroke-width="1.5" opacity="0.16"/>
+  </g>
+
+  <!-- light shafts -->
+  <g class="rays" fill="url(#ray)">
+    <path d="M640 0 L740 0 L560 640 L400 640 Z" opacity="0.8"/>
+    <path d="M800 0 L850 0 L770 640 L680 640 Z" opacity="0.6"/>
+    <path d="M900 0 L1010 0 L1040 640 L880 640 Z"/>
+    <path d="M1080 0 L1120 0 L1200 520 L1200 640 L1130 640 Z" opacity="0.6"/>
+    <path d="M500 0 L540 0 L330 640 L260 640 Z" opacity="0.35"/>
+  </g>
+
+  <!-- herring scattering ahead of the pod -->
+  <g class="school" filter="url(#blur1)">
+    <use href="#fish" transform="translate(229 132) rotate(4) scale(1.17)" opacity="0.27"/>
+    <use href="#fish" transform="translate(340 150) rotate(-12) scale(0.76)" opacity="0.26"/>
+    <use href="#fish" transform="translate(356 132) rotate(7) scale(0.90)" opacity="0.46"/>
+    <use href="#fish" transform="translate(353 169) rotate(1) scale(1.00)" opacity="0.43"/>
+    <use href="#fish" transform="translate(332 186) rotate(5) scale(1.23)" opacity="0.57"/>
+    <use href="#fish" transform="translate(377 124) rotate(-13) scale(0.97)" opacity="0.39"/>
+    <use href="#fish" transform="translate(276 192) rotate(-20) scale(0.96)" opacity="0.36"/>
+    <use href="#fish" transform="translate(442 186) rotate(-5) scale(1.26)" opacity="0.38"/>
+    <use href="#fish" transform="translate(329 161) rotate(-1) scale(0.98)" opacity="0.28"/>
+    <use href="#fish" transform="translate(370 125) rotate(-20) scale(1.10)" opacity="0.50"/>
+    <use href="#fish" transform="translate(421 139) rotate(-15) scale(0.95)" opacity="0.28"/>
+    <use href="#fish" transform="translate(276 166) rotate(-3) scale(0.98)" opacity="0.38"/>
+    <use href="#fish" transform="translate(255 137) rotate(-24) scale(1.28)" opacity="0.57"/>
+    <use href="#fish" transform="translate(355 217) rotate(-18) scale(0.75)" opacity="0.57"/>
+    <use href="#fish" transform="translate(393 198) rotate(3) scale(1.19)" opacity="0.49"/>
+    <use href="#fish" transform="translate(417 127) rotate(-9) scale(1.02)" opacity="0.42"/>
+    <use href="#fish" transform="translate(296 167) rotate(-21) scale(1.18)" opacity="0.56"/>
+    <use href="#fish" transform="translate(328 147) rotate(-19) scale(0.75)" opacity="0.46"/>
+    <use href="#fish" transform="translate(342 169) rotate(-28) scale(0.77)" opacity="0.60"/>
+    <use href="#fish" transform="translate(156 182) rotate(-26) scale(1.07)" opacity="0.50"/>
+    <use href="#fish" transform="translate(550 102) rotate(-21) scale(0.86)" opacity="0.58"/>
+    <use href="#fish" transform="translate(254 106) rotate(-12) scale(0.82)" opacity="0.49"/>
+  </g>
+
+  <!-- pod, far to near -->
+  <g class="m4"><use href="#orca" transform="translate(666.0 120.0) scale(0.2) rotate(6 320 150)" opacity="0.42"/></g>
+  <g class="m3"><use href="#orca" transform="translate(924.0 83.0) scale(0.3) rotate(8 320 150)" opacity="0.6"/></g>
+  <g class="m2"><use href="#orca" transform="translate(931.2 477.0) scale(0.34) rotate(15 320 150)" opacity="0.68"/></g>
+  <g class="m1">
+    <use href="#orca" transform="translate(601.2 426.0) scale(0.44) rotate(10 320 150)" opacity="0.88"/>
+    <use href="#orca" transform="translate(762.0 536.0) scale(0.2) rotate(9 320 150)" opacity="0.8"/>
+  </g>
+  <g class="lead"><use href="#lead" transform="translate(577.6 162.0) scale(0.92) rotate(12 320 150)"/></g>
+
+  <rect width="1200" height="640" fill="url(#textfade)"/>
+
+  <g fill="none" stroke="#ffd9cf" stroke-width="1" opacity="0.6">
+    <circle class="bub b0" cx="742" cy="196" r="3.2"/>
+    <circle class="bub b1" cx="758" cy="176" r="2.2"/>
+    <circle class="bub b2" cx="751" cy="152" r="4"/>
+    <circle class="bub b0" cx="770" cy="132" r="2.6"/>
+    <circle class="bub b1" cx="764" cy="104" r="1.8"/>
+    <circle class="bub b2" cx="783" cy="86" r="3"/>
+    <circle class="bub b0" cx="690" cy="452" r="2"/>
+    <circle class="bub b1" cx="700" cy="432" r="1.4"/>
+    <circle class="bub b2" cx="1002" cy="486" r="1.6"/>
+  </g>
+  <g fill="#ff8f7a">
+    <circle class="drift d0" cx="389" cy="114" r="0.8" opacity="0.09"/>
+    <circle class="drift d1" cx="643" cy="247" r="0.8" opacity="0.51"/>
+    <circle class="drift d2" cx="258" cy="73" r="1.6" opacity="0.09"/>
+    <circle class="drift d3" cx="109" cy="283" r="2.2" opacity="0.10"/>
+    <circle class="drift d0" cx="268" cy="409" r="0.8" opacity="0.19"/>
+    <circle class="drift d1" cx="476" cy="625" r="0.8" opacity="0.19"/>
+    <circle class="drift d2" cx="160" cy="280" r="2.2" opacity="0.10"/>
+    <circle class="drift d3" cx="370" cy="526" r="1" opacity="0.10"/>
+    <circle class="drift d0" cx="685" cy="136" r="0.8" opacity="0.37"/>
+    <circle class="drift d1" cx="75" cy="57" r="1" opacity="0.17"/>
+    <circle class="drift d2" cx="638" cy="502" r="1.6" opacity="0.38"/>
+    <circle class="drift d3" cx="544" cy="206" r="1" opacity="0.43"/>
+    <circle class="drift d0" cx="293" cy="376" r="2.2" opacity="0.17"/>
+    <circle class="drift d1" cx="412" cy="298" r="2.2" opacity="0.27"/>
+    <circle class="drift d2" cx="142" cy="279" r="1.2" opacity="0.11"/>
+    <circle class="drift d3" cx="587" cy="44" r="0.8" opacity="0.46"/>
+    <circle class="drift d0" cx="688" cy="563" r="1.2" opacity="0.29"/>
+    <circle class="drift d1" cx="420" cy="328" r="1.6" opacity="0.09"/>
+    <circle class="drift d2" cx="112" cy="187" r="0.8" opacity="0.09"/>
+    <circle class="drift d3" cx="842" cy="421" r="1.6" opacity="0.26"/>
+    <circle class="drift d0" cx="463" cy="435" r="0.8" opacity="0.26"/>
+    <circle class="drift d1" cx="427" cy="399" r="1.6" opacity="0.09"/>
+    <circle class="drift d2" cx="922" cy="100" r="1" opacity="0.31"/>
+    <circle class="drift d3" cx="1100" cy="328" r="1" opacity="0.33"/>
+    <circle class="drift d0" cx="659" cy="568" r="1.6" opacity="0.50"/>
+    <circle class="drift d1" cx="334" cy="277" r="1.2" opacity="0.21"/>
+    <circle class="drift d2" cx="457" cy="163" r="0.8" opacity="0.11"/>
+    <circle class="drift d3" cx="278" cy="165" r="1.6" opacity="0.24"/>
+    <circle class="drift d0" cx="219" cy="195" r="1" opacity="0.16"/>
+    <circle class="drift d1" cx="443" cy="371" r="1" opacity="0.21"/>
+    <circle class="drift d2" cx="619" cy="403" r="0.8" opacity="0.33"/>
+    <circle class="drift d3" cx="1045" cy="610" r="2.2" opacity="0.31"/>
+    <circle class="drift d0" cx="479" cy="84" r="1.6" opacity="0.09"/>
+    <circle class="drift d1" cx="81" cy="149" r="1" opacity="0.10"/>
+    <circle class="drift d2" cx="721" cy="83" r="2.2" opacity="0.21"/>
+    <circle class="drift d3" cx="122" cy="245" r="0.8" opacity="0.09"/>
+    <circle class="drift d0" cx="250" cy="253" r="1.2" opacity="0.27"/>
+    <circle class="drift d1" cx="723" cy="314" r="0.8" opacity="0.49"/>
+    <circle class="drift d2" cx="1192" cy="309" r="1.6" opacity="0.27"/>
+    <circle class="drift d3" cx="173" cy="485" r="1.2" opacity="0.17"/>
+    <circle class="drift d0" cx="830" cy="340" r="1" opacity="0.53"/>
+    <circle class="drift d1" cx="634" cy="111" r="2.2" opacity="0.52"/>
+    <circle class="drift d2" cx="910" cy="205" r="0.8" opacity="0.43"/>
+    <circle class="drift d3" cx="313" cy="247" r="1" opacity="0.15"/>
+    <circle class="drift d0" cx="267" cy="356" r="2.2" opacity="0.14"/>
+    <circle class="drift d1" cx="268" cy="523" r="1" opacity="0.24"/>
+    <circle class="drift d2" cx="982" cy="479" r="1" opacity="0.23"/>
+    <circle class="drift d3" cx="591" cy="473" r="0.8" opacity="0.47"/>
+    <circle class="drift d0" cx="567" cy="140" r="2.2" opacity="0.53"/>
+    <circle class="drift d1" cx="537" cy="601" r="1.2" opacity="0.27"/>
+    <circle class="drift d2" cx="438" cy="157" r="1" opacity="0.17"/>
+    <circle class="drift d3" cx="405" cy="319" r="2.2" opacity="0.24"/>
+    <circle class="drift d0" cx="575" cy="425" r="0.8" opacity="0.48"/>
+    <circle class="drift d1" cx="144" cy="261" r="1" opacity="0.17"/>
+    <circle class="drift d2" cx="214" cy="509" r="1.2" opacity="0.09"/>
+    <circle class="drift d3" cx="1135" cy="468" r="1.6" opacity="0.31"/>
+    <circle class="drift d0" cx="1136" cy="469" r="1" opacity="0.55"/>
+    <circle class="drift d1" cx="33" cy="386" r="1.6" opacity="0.24"/>
+    <circle class="drift d2" cx="175" cy="532" r="1.6" opacity="0.21"/>
+    <circle class="drift d3" cx="420" cy="360" r="1" opacity="0.08"/>
+    <circle class="drift d0" cx="959" cy="470" r="0.8" opacity="0.36"/>
+    <circle class="drift d1" cx="1120" cy="289" r="1" opacity="0.48"/>
+    <circle class="drift d2" cx="253" cy="176" r="1.2" opacity="0.18"/>
+    <circle class="drift d3" cx="916" cy="222" r="2.2" opacity="0.32"/>
+    <circle class="drift d0" cx="157" cy="584" r="1.2" opacity="0.25"/>
+    <circle class="drift d1" cx="795" cy="525" r="2.2" opacity="0.32"/>
+    <circle class="drift d2" cx="1101" cy="331" r="2.2" opacity="0.21"/>
+    <circle class="drift d3" cx="613" cy="561" r="1" opacity="0.39"/>
+    <circle class="drift d0" cx="931" cy="113" r="1" opacity="0.34"/>
+    <circle class="drift d1" cx="870" cy="365" r="1.2" opacity="0.42"/>
+  </g>
+
+  <g fill="none" stroke="#ff5a66" stroke-width="1.8" stroke-linecap="round">
+    <path class="ping p0" d="M568.2 239.9 A24 24 0 0 0 563.2 263.4" opacity="0.9"/>
+    <path class="ping p1" d="M551.8 225.2 A46 46 0 0 0 542.3 270.2" opacity="0.6"/>
+    <path class="ping p2" d="M534.0 209.2 A70 70 0 0 0 519.4 277.6" opacity="0.35"/>
+  </g>
+
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace">
+    <rect x="72" y="246" width="40" height="4" fill="#ff3246"/>
+    <text x="72" y="312" font-size="58" font-weight="700" fill="#fff4f1" letter-spacing="2">RED ORCA POD</text>
+    <text x="74" y="354" font-size="24" fill="#f3cdc6" letter-spacing="1">many models, one pod</text>
+    <text x="74" y="384" font-size="16" fill="#c08d8a" letter-spacing="0.6">open-weights cyber agent for red teams</text>
+    <rect x="74" y="410" width="204" height="30" rx="4" fill="#ff3246" fill-opacity="0.1" stroke="#ff4a5c" stroke-width="1.5"/>
+    <text x="176" y="430" font-size="13.5" fill="#ff7078" letter-spacing="2" text-anchor="middle">AUTHORIZED USE ONLY</text>
+  </g>
+</svg>
