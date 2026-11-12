@@ -1,0 +1,165 @@
+# ---------------------------------------------------------------------------
+# Secrets and environment
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets/
+credentials/
+private/
+*.secret
+
+# ---------------------------------------------------------------------------
+# Agent and assistant files (keep private)
+# ---------------------------------------------------------------------------
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+AGENT.md
+.gemini/
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.continue/
+.claude/
+.agent/
+.agents/
+.agents.md
+.opencode/
+copilot-instructions.md
+.github/copilot-instructions.md
+
+# Agent scratch output, transcripts, and memory
+agent/
+agents/
+agent_*/
+*_agent_notes*
+.prompt-history
+chat-history/
+transcripts/
+session-logs/
+memory/
+memories/
+
+# ---------------------------------------------------------------------------
+# Model weights and local model artifacts
+# ---------------------------------------------------------------------------
+*.gguf
+*.ggml
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.tflite
+models/
+model-weights/
+weights/
+checkpoints/
+cache/huggingface/
+.huggingface/
+.ollama/
+
+# ---------------------------------------------------------------------------
+# Run output and private data
+# ---------------------------------------------------------------------------
+logs/
+*.log
+runs/
+output/
+outputs/
+reports/
+findings/
+scans/
+captures/
+artifacts/
+tmp/
+temp/
+*.pcap
+*.pcapng
+*.har
+*.sqlite
+*.db
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+ipython_config.py
+
+# ---------------------------------------------------------------------------
+# Node / JS / TS
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm/
+.yarn/
+dist/
+build/
+.next/
+.nuxt/
+out/
+coverage/
+*.tsbuildinfo
+.eslintcache
+
+# ---------------------------------------------------------------------------
+# OS and editors
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.obsidian/
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+*.local
+*.bak
+*.orig
+*.rej
+.cache/
+.direnv/
