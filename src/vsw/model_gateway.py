@@ -51,7 +51,8 @@ class ModelResponse:
 
 
 class ModelGateway(Protocol):
-    name: str
+    @property
+    def name(self) -> str: ...
 
     def complete(self, prompt: str, role: str = "plan") -> ModelResponse: ...
 
@@ -59,7 +60,9 @@ class ModelGateway(Protocol):
 class MockModelGateway:
     """Deterministic gateway. No network, no credentials."""
 
-    name = "mock"
+    @property
+    def name(self) -> str:
+        return "mock"
 
     def __init__(self, responses: dict[str, str] | None = None):
         self.responses = responses or {

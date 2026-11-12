@@ -1,8 +1,10 @@
 # Runtime model routes for assessment runs.
 #
-# Every route is disabled by default. A route is enabled only after
+# Every route starts disabled. A route is enabled only after
 # `vsw models check <route>` succeeds and its behaviour is compared on the
-# labelled fixtures. Build delegation does not use this file; it stays on the
+# labelled fixtures. `plan` and `triage` were enabled for local lab/observe
+# after the 2026-11-12 live evaluation; fallback and optional routes remain
+# disabled. Build delegation does not use this file; it stays on the
 # Claude/Codex CLIs through MODEL_ROUTING.md.
 #
 # Exact model IDs were checked against the provider model lists on 2026-11-12.
@@ -31,7 +33,7 @@ routes:
     model: deepseek-v4.1-flash
     effort: high
     max_tokens: 4096
-    enabled: false
+    enabled: true
     purpose: >-
       Routine planning and deployment analysis. Go privacy must allow Global
       regions for DeepSeek V4.1 Flash.
@@ -47,7 +49,7 @@ routes:
     model: glm-5.3-flash
     effort: high
     max_tokens: 4096
-    enabled: false
+    enabled: true
     purpose: Dependency and scanner-evidence triage.
   triage-openrouter:
     provider: openrouter

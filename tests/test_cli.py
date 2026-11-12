@@ -118,13 +118,15 @@ def test_delegate_dry_run_rejects_crossed_roles():
     assert "may not take" in payload["reason"]
 
 
-def test_models_list_shows_disabled_routes_without_secrets():
+def test_models_list_shows_primary_routes_without_secrets():
     proc = _run("models", "list", "--json")
     assert proc.returncode == 0, proc.stderr
     data = json.loads(proc.stdout)
     routes = {route["name"]: route for route in data["routes"]}
-    assert routes["plan"]["enabled"] is False
+    assert routes["plan"]["enabled"] is True
+    assert routes["triage"]["enabled"] is True
     assert routes["plan"]["model"] == "deepseek-v4.1-flash"
+    assert routes["gemini"]["enabled"] is False
     assert routes["gemini"]["model"] == "google/gemini-4-argon"
     assert routes["plan"]["key_present"] is False
     assert "sk-" not in proc.stdout
@@ -146,14 +148,22 @@ def test_models_check_rejects_unknown_route():
     assert "unknown model route" in data["reason"]
 
 
-def test_report_lists_all_observation_artifacts(tmp_path):
+def test_report_lists_all_run_artifacts(tmp_path):
     run_dir = tmp_path / "obs-test"
     run_dir.mkdir()
     (run_dir / "findings.json").write_text("{}", encoding="utf-8")
-    for name in ("report.md", "coverage.json", "exchanges.json", "run.json"):
+    for name in ("report.md", "coverage.json", "exchanges.json", "assessment.json", "run.json"):
         (run_dir / name).write_text("{}", encoding="utf-8")
     proc = _run("report", "--run", str(run_dir))
     assert proc.returncode == 0, proc.stderr
     data = json.loads(proc.stdout)
-    assert set(data) == {"run_id", "markdown", "json", "coverage", "exchanges", "run"}
+    assert set(data) == {
+        "run_id",
+        "markdown",
+        "json",
+        "coverage",
+        "exchanges",
+        "assessment",
+        "run",
+    }
     assert data["run_id"] == "obs-test"

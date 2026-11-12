@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 import typer
 
+from .assessment import AssessmentError, run_assessment
 from .budget import Budget
 from .coding_agent_gateway import CodingAgentGateway, apply_reviewed_patch
 from .config import load_env_file, load_limits, repo_root
@@ -614,6 +615,91 @@ def run(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def assess(
+    manifest: Path = MANIFEST_OPTION,
+    target: str = typer.Option(
+        None, "--target", help="In-scope URL; defaults to the first origin."
+    ),
+    mode: str = typer.Option("mock", "--mode", help="mock or live."),
+    plan_route: str = typer.Option("plan", "--plan-route", help="Configured planning route."),
+    triage_route: str = typer.Option(
+        "triage", "--triage-route", help="Configured triage route."
+    ),
+    browser: bool = typer.Option(True, "--browser/--no-browser", help="Use Playwright."),
+    evaluate: bool = typer.Option(
+        False,
+        "--evaluate",
+        help="Use disabled runtime routes for evaluation only; never enables them.",
+    ),
+) -> None:
+    """Plan with a model, observe within scope, and triage the findings."""
+    from .scope import ScopeError
+
+    normalized = mode.strip().lower()
+    if normalized not in {"mock", "live"}:
+        typer.echo(json.dumps({"status": "error", "reason": "mode must be mock or live"}, indent=2))
+        raise typer.Exit(code=2)
+    if evaluate and normalized != "live":
+        typer.echo(
+            json.dumps(
+                {"status": "error", "reason": "--evaluate requires --mode live"}, indent=2
+            )
+        )
+        raise typer.Exit(code=2)
+    try:
+        if normalized == "mock":
+            report = run_assessment(
+                manifest,
+                target,
+                mode="mock",
+                use_browser=browser,
+                plan_route=plan_route,
+                triage_route=triage_route,
+            )
+        else:
+            report = run_assessment(
+                manifest,
+                target,
+                mode="live",
+                use_browser=browser,
+                plan_route=plan_route,
+                triage_route=triage_route,
+                evaluate=evaluate,
+            )
+    except (ScopeError, ProviderUnavailable, AssessmentError) as exc:
+        typer.echo(json.dumps({"status": "error", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+
+    triage = report.get("triage", {})
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": report["run_id"],
+                "status": report["status"],
+                "observation_status": report["observation_status"],
+                "run_dir": report["run_dir"],
+                "assessment_json": report["assessment_json"],
+                "assessment_markdown": report["assessment_markdown"],
+                "plan": {
+                    "focus": report["plan"].get("focus", []),
+                    "seeds": report["plan"].get("seeds", []),
+                    "checks": report["plan"].get("checks", []),
+                },
+                "triage": {
+                    "items": len(triage.get("items", [])),
+                    "summary": triage.get("summary", ""),
+                },
+                "model_calls": len(report.get("model_calls", [])),
+                "rejected_seeds": len(report.get("plan_rejected_seeds", [])),
+            },
+            indent=2,
+        )
+    )
+    if report["status"] != "pass":
+        raise typer.Exit(code=1)
+
+
 def _run_dir(value: str | None) -> Path:
     from .scope import ScopeError
 
@@ -695,6 +781,7 @@ def report(
         "json": path / "findings.json",
         "coverage": path / "coverage.json",
         "exchanges": path / "exchanges.json",
+        "assessment": path / "assessment.json",
         "run": path / "run.json",
     }
     payload = {

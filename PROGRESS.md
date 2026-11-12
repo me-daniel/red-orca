@@ -59,17 +59,19 @@ local Claude/Codex CLIs, and the local lab fixture.
   passed, its digest matches the diff the review saw, the review verdict is
   `APPROVED`, and the patch is stored under `runs/`.
 
-## Runtime model gateway (wired, routes disabled)
+## Runtime model gateway (gated routes)
 
 - `ModelGateway` implements the deterministic mock, OpenRouter, and generic
   OpenAI-compatible transports. The OpenCode Go subscription is the primary
   compatible endpoint; OpenRouter carries Gemini and the evaluable DeepSeek/GLM
   fallbacks. Sol and Luna are not gateway routes: later cyber runs call them
   through the local `codex exec` CLI.
-- `configs/models.yaml` pins exact model IDs and efforts. Every route is
-  disabled. `vsw models list` shows route state and whether the provider key is
-  set without printing the key. `vsw models check <route>` calls one disabled
-  route once and leaves it disabled.
+- `configs/models.yaml` pins exact model IDs and efforts. Routes are disabled
+  unless checked and evaluated; `plan` and `triage` are enabled for local
+  lab/observe after the 2026-11-12 live evaluation, while fallback and optional
+  routes remain disabled. `vsw models list` shows route state and whether the
+  provider key is set without printing the key. `vsw models check <route>` calls
+  one route once and leaves its enabled state unchanged.
 - Each response records the provider-reported model, finish reason, latency,
   usage, charged cost, and any Go allowance. Provider errors redact the API key.
   A response without usage accounting is reported as `no_usage`.
@@ -123,6 +125,22 @@ local Claude/Codex CLIs, and the local lab fixture.
   fails the run and withholds evidence from export. Generic captures no longer
   claim `no_issue_found` for every advertised adapter capability.
 
+## Multi-agent assessment (lean)
+
+- `vsw assess` runs a bounded plan → observe → triage loop. `plan` proposes
+  in-scope seeds and focus; the deterministic scope guard drops anything else;
+  `triage` reviews sanitized findings and is advisory only. It never changes
+  finding state, scope, or coverage.
+- Mock mode needs no credentials and exercises the same artifacts. Live mode
+  uses the `plan` and `triage` routes; `--evaluate` can use disabled routes for
+  evaluation without enabling them.
+- 2026-11-12 live evaluation: DeepSeek plan and GLM triage on the lab fixture
+  produced a bounded three-seed plan and ten advisory triage items. The lab's
+  deliberate out-of-scope redirect made observation `partial`, which the run
+  reported honestly rather than hiding.
+- `plan` and `triage` are enabled for local lab/observe. Fallback and optional
+  routes remain disabled.
+
 ## Live, mocked, blocked
 
 | Item | State |
@@ -132,7 +150,7 @@ local Claude/Codex CLIs, and the local lab fixture.
 | Lab fixture, passive HTTP, Playwright Chromium + scope proxy | live, loopback only |
 | AntiFox / Strix | blocked: no container runtime |
 | M2 validation checks | not started |
-| Runtime model routes (OpenCode Go, OpenRouter) | wired; live-checked 2026-11-12; all routes disabled |
+| Runtime model routes (OpenCode Go, OpenRouter) | `plan`/`triage` enabled for lab/observe after live evaluation; other routes disabled |
 
 ## Known limits
 
@@ -146,9 +164,10 @@ local Claude/Codex CLIs, and the local lab fixture.
 - HTTPS targets are refused, not tunnelled: a tunnel cannot be path-checked, so HTTPS
   scope enforcement needs a decision before it is enabled. M1 is therefore a local
   HTTP observation milestone, not remote HTTPS coverage; an HTTPS-only run cannot pass.
-- Runtime routes are disabled by default. Enabling one requires a successful
-  `vsw models check` and the labelled fixture comparison in `RED_MODEL_ROUTING.md`;
-  a connectivity check alone is not an evaluation.
+- Runtime routes are disabled unless enabled after evaluation. `plan` and
+  `triage` are enabled for local lab/observe; fallback and optional routes remain
+  disabled. Enabling another route requires a successful `vsw models check` and
+  the labelled fixture comparison in `RED_MODEL_ROUTING.md`.
 - Go DeepSeek requires Global regions in the Console privacy settings. If a
   workspace is not set to Global, `plan` fails closed; use `plan-openrouter` as
   the evaluated fallback.

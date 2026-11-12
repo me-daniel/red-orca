@@ -27,9 +27,16 @@ OpenCode free routes may receive a small preference only after checking current 
 
 ## Transport and configured routes
 
-`configs/models.yaml` is the runtime route table. Every route is disabled by
-default; `vsw models check <route>` calls a disabled route once without enabling
-it. Enabling is a separate edit after the fixture comparison below.
+`configs/models.yaml` is the runtime route table. Routes are disabled until a
+fixture comparison; `vsw models check <route>` calls a disabled route once without
+enabling it. `plan` and `triage` are enabled for local lab/observe after the
+2026-11-12 live evaluation; fallback and optional routes remain disabled.
+
+`vsw assess --mode mock` runs the same plan → observe → triage loop without
+credentials. `vsw assess --mode live` uses the enabled `plan` and `triage` routes;
+`--evaluate` may call disabled routes for evaluation without enabling them. The
+planner only selects registered adapter seeds inside the approved scope. Triage
+is advisory: a model cannot change finding state, coverage, or scope.
 
 | Route | Provider | Exact model | Effort | Use |
 |---|---|---|---|---|

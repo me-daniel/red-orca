@@ -304,7 +304,7 @@ def test_unknown_route_is_refused():
         gateway_for_route(_route_config(True), "nope", limits=LIMITS)
 
 
-def test_repository_routes_are_exact_and_disabled():
+def test_repository_routes_are_exact_with_primary_routes_enabled():
     expected = {
         "plan": ("opencode-go", "deepseek-v4.1-flash", "high"),
         "plan-openrouter": ("openrouter", "deepseek/deepseek-v4.1-flash-1017", "high"),
@@ -314,11 +314,12 @@ def test_repository_routes_are_exact_and_disabled():
         "gemini": ("openrouter", "google/gemini-4-argon", "high"),
         "hy4": ("opencode-go", "hy4", "high"),
     }
+    enabled = {"plan", "triage"}
     config = load_model_config(ROOT / "configs" / "models.yaml")
     assert set(config.routes) == set(expected)
     for name, (provider, model, effort) in expected.items():
         route = config.routes[name]
         assert (route.provider, route.model, route.effort) == (provider, model, effort)
-        assert route.enabled is False, f"{name} must stay disabled until evaluated"
+        assert route.enabled is (name in enabled), f"{name} enabled state changed unexpectedly"
     assert config.providers["opencode-go"].api_key_env == "OPENCODE_API_KEY"
     assert config.providers["openrouter"].api_key_env == "OPENROUTER_API_KEY"

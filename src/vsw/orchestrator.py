@@ -248,25 +248,38 @@ def run_observation(
     *,
     use_browser: bool = True,
     root: Path | None = None,
+    targets: list[str] | None = None,
+    run_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Inspect a scoped target, capture hashed evidence, write a report."""
+    """Inspect scoped targets, capture hashed evidence, write a report."""
     root = root or repo_root()
     engagement: Engagement = load_engagement(manifest_path)
     guard = ScopeGuard(engagement)
 
-    if target is None:
-        origin = engagement.origins[0].rstrip("/")
-        prefix = engagement.path_prefixes[0] if engagement.path_prefixes else "/"
-        target = origin + (prefix if prefix.startswith("/") else "/" + prefix)
-    guard.check(target, "GET", reserve=False)
+    if targets is None:
+        if target is None:
+            origin = engagement.origins[0].rstrip("/")
+            prefix = engagement.path_prefixes[0] if engagement.path_prefixes else "/"
+            target = origin + (prefix if prefix.startswith("/") else "/" + prefix)
+        targets = [target]
+    if not targets:
+        raise ScopeError("no observation targets")
+    for seed in targets:
+        guard.check(seed, "GET", reserve=False)
+    target = targets[0]
 
-    run_id, run_dir = new_run_dir(root, "obs")
+    if run_dir is None:
+        run_id, run_dir = new_run_dir(root, "obs")
+    else:
+        run_dir = run_dir.resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
+        run_id = run_dir.name
     store = EvidenceStore(run_dir)
     limits = load_limits(root)
     budget = Budget(limits)
     started = utc_now()
 
-    seeds = [target]
+    seeds = list(targets)
     adapters: list[Adapter] = [
         PassiveHttpAdapter(guard, store, engagement),
     ]
