@@ -107,6 +107,21 @@ Your `.env` holds API keys and endpoint URLs for any closed models you choose to
 - [ ] Evaluation harness for comparing pods and single models
 - [ ] Run logs and reproducible reports
 
+## Implementation: `vsw`
+
+The Pod is implemented as the **Vorsprung Security Workbench (`vsw`)**, a bounded, evidence-first security testing tool. Requirements live in `OPENCODE_BUILD_BRIEF.md`; build routing lives in `MODEL_ROUTING.md`; assessment routing lives in `RED_MODEL_ROUTING.md`.
+
+```bash
+uv sync --all-extras
+uv run vsw doctor       # toolchain, config, skills, routing policy
+uv run vsw demo         # deterministic mock demo, no credentials
+uv run vsw smoke        # mock coding-and-review task
+uv run vsw smoke --live # real Claude Sonnet High + Codex Sol High
+uv run vsw policy       # build allowlist and cyber-only exclusions
+```
+
+Current stage: **M0**. The build coordinator is DeepSeek V4.1 Flash via OpenCode. Claude and Codex are bounded delegates through a policy-checked gateway; cyber-only models are rejected during build. None of this is a live assessment.
+
 ## Who this is for
 
 - Defenders who need to model attacker capability they can't buy access to.

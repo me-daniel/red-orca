@@ -20,8 +20,6 @@ private/
 # ---------------------------------------------------------------------------
 CLAUDE.md
 CLAUDE.local.md
-AGENTS.md
-AGENT.md
 .gemini/
 .cursor/
 .cursorrules
@@ -32,7 +30,6 @@ AGENT.md
 .agent/
 .agents/
 .agents.md
-.opencode/
 copilot-instructions.md
 .github/copilot-instructions.md
 

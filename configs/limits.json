@@ -1,0 +1,11 @@
+{
+  "max_wall_seconds_per_run": 900,
+  "max_delegate_calls_per_run": 8,
+  "max_usd_per_run": 2.0,
+  "per_call_timeout_seconds": 120,
+  "coordinator_timeout_seconds": 120,
+  "max_output_chars": 20000,
+  "max_prompt_chars": 24000,
+  "max_escalation_usd": 1.0,
+  "max_task_budget_usd": 0.5
+}

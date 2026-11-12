@@ -1,0 +1,27 @@
+{
+  "generated": "2026-11-12",
+  "policy": "Pin commit, release, image, or template. Preserve license notices. No silent updates during a run.",
+  "upstreams": {
+    "ponytail": {
+      "repo": "https://github.com/DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
+      "license": "MIT",
+      "mode": "vendored skills in .opencode/skills/ponytail*",
+      "notice": "third_party/ponytail/LICENSE"
+    },
+    "pstack": {
+      "repo": "https://github.com/michael-denyer/pstack-claude",
+      "commit": "36f43364d9198e951f2b739bfb007eb747f834b7",
+      "license": "MIT",
+      "mode": "OpenCode plugin, pinned git spec",
+      "notice": "third_party/NOTICE.md"
+    },
+    "rea": {
+      "repo": "https://github.com/morluto/rea",
+      "commit": "047d75a498f18a6608f35ee5e36cf1bf0f81ca97",
+      "license": "MIT",
+      "mode": "vendored companion skill; MCP registration in M3",
+      "notice": "third_party/rea/LICENSE"
+    }
+  }
+}

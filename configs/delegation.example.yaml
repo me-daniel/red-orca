@@ -1,0 +1,36 @@
+{
+  "phase": "build",
+  "coordinator": "opencode/deepseek-v4.1-flash-free",
+  "max_workers": 2,
+  "delegation_depth": 1,
+  "budgets": {
+    "per_task_usd": 0.5,
+    "per_run_usd": 2.0,
+    "per_task_timeout_s": 120,
+    "max_calls": 8,
+    "max_output_chars": 20000
+  },
+  "allowlist": [
+    { "family": "claude", "label": "opus", "effort": "medium" },
+    { "family": "claude", "label": "sonnet", "effort": "high" },
+    { "family": "codex", "label": "gpt-6.1-sol", "effort": "high" }
+  ],
+  "escalation": [
+    {
+      "family": "claude",
+      "label": "opus",
+      "effort": "high",
+      "requires_reason": true,
+      "max_usd": 1.0
+    }
+  ],
+  "rejected_at_build": [
+    { "label": "gpt-6-sol", "reason": "cyber-only; runtime routing" },
+    { "label": "luna", "reason": "cyber-only; runtime routing" },
+    { "label": "terra", "reason": "not a build delegate" },
+    { "label": "haiku", "reason": "not a build delegate" },
+    { "effort": "xhigh", "reason": "not a build effort" },
+    { "effort": "max", "reason": "not a build effort" },
+    { "effort": "low", "reason": "not a build effort" }
+  ]
+}

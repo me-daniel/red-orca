@@ -1,0 +1,66 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/deepseek-v4.1-flash-free",
+  "default_agent": "coordinator",
+  "agents": {
+    "coordinator": {
+      "description": "vsw build coordinator. Plans, routes work to Claude/Codex delegates, and adjudicates. Never edits files or runs targets directly.",
+      "mode": "primary",
+      "model": "opencode/deepseek-v4.1-flash-free",
+      "steps": 12,
+      "system": "You are the vsw build coordinator. Read OPENCODE_BUILD_BRIEF.md and MODEL_ROUTING.md before planning. Decompose objectives, route to allowlisted build delegates only, and adjudicate results. You do not edit files or run targets yourself. Reject cyber-only models during build. Report what ran, what was mocked, and what is blocked.",
+      "permissions": [
+        { "action": "edit", "resource": "*", "effect": "deny" },
+        { "action": "external_directory", "resource": "*", "effect": "deny" },
+        { "action": "webfetch", "resource": "*", "effect": "deny" },
+        { "action": "shell", "resource": "*", "effect": "deny" }
+      ]
+    },
+    "reviewer": {
+      "description": "Read-only reviewer for patches, findings, and reports.",
+      "mode": "subagent",
+      "model": "opencode/deepseek-v4.1-flash-free",
+      "steps": 6,
+      "system": "You are a strict reviewer. Check correctness, evidence quality, and scope compliance. Report findings with file and line references. Do not edit files or run commands.",
+      "permissions": [
+        { "action": "edit", "resource": "*", "effect": "deny" },
+        { "action": "shell", "resource": "*", "effect": "deny" },
+        { "action": "webfetch", "resource": "*", "effect": "deny" },
+        { "action": "external_directory", "resource": "*", "effect": "deny" }
+      ]
+    }
+  },
+  "mcp": {
+    "timeout": {
+      "startup": 20000,
+      "catalog": 20000,
+      "execution": 180000
+    },
+    "servers": {
+      "delegates": {
+        "type": "local",
+        "command": ["python3", "mcp_delegates.py"],
+        "cwd": ".",
+        "codemode": false,
+        "timeout": {
+          "execution": 180000
+        }
+      }
+    }
+  },
+  "plugins": [
+    "github:michael-denyer/pstack-claude#36f43364d9198e951f2b739bfb007eb747f834b7"
+  ],
+  "instructions": ["AGENTS.md"],
+  "skills": ["./.opencode/skills"],
+  "permissions": [
+    { "action": "shell", "resource": "git push *", "effect": "deny" },
+    { "action": "shell", "resource": "rm -rf *", "effect": "deny" },
+    { "action": "shell", "resource": "curl *", "effect": "ask" },
+    { "action": "shell", "resource": "wget *", "effect": "ask" }
+  ],
+  "tool_output": {
+    "max_lines": 1200,
+    "max_bytes": 60000
+  }
+}
