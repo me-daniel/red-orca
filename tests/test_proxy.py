@@ -8,8 +8,12 @@ origin's own request log, not on a blocked-request list.
 from __future__ import annotations
 
 import http.client
+import socket
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import pytest
 
@@ -117,3 +121,84 @@ def test_non_chromium_engine_is_refused(manifest, tmp_path: Path) -> None:
     with pytest.raises(AdapterUnavailable) as exc:
         adapter.validate_config()
     assert "redirect hops" in str(exc.value)
+
+
+def test_proxy_connects_to_the_checked_address(manifest, lab_server, monkeypatch) -> None:
+    port = int(urlsplit(lab_server).port or 80)
+    guard = ScopeGuard(
+        load_engagement(manifest(origin=f"http://rebind.test:{port}")),
+        resolver=lambda host, _: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))],
+    )
+    real = socket.getaddrinfo
+
+    def no_rebind(host, *args, **kwargs):
+        if host == "rebind.test":
+            raise OSError("hostname was resolved again after the scope check")
+        return real(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", no_rebind)
+    with GuardedProxy(guard) as proxy:
+        status, body = proxy_get(proxy, f"http://rebind.test:{port}/vuln/echo?q=pinned-ok")
+    assert status == 200
+    assert b"pinned-ok" in body
+
+
+def test_proxy_refuses_a_mutation_the_manifest_did_not_approve(manifest, lab_server) -> None:
+    guard = ScopeGuard(load_engagement(manifest(methods=["GET", "POST"])))
+    with GuardedProxy(guard) as proxy:
+        status, _ = proxy_get(proxy, f"{lab_server}/vuln/action", method="POST")
+    assert status == 403
+    assert "changes state" in proxy.blocked[0]["reason"]
+    assert guard.requests == 0
+
+
+def test_proxy_enforces_the_manifest_concurrency_limit(manifest) -> None:
+    state = {"active": 0, "peak": 0}
+    lock = threading.Lock()
+
+    class SlowHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            with lock:
+                state["active"] += 1
+                state["peak"] = max(state["peak"], state["active"])
+            time.sleep(0.25)
+            body = b"slow"
+            with lock:
+                state["active"] -= 1
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SlowHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    try:
+        guard = ScopeGuard(
+            load_engagement(manifest(origin=f"http://127.0.0.1:{port}", max_concurrency=1))
+        )
+        with GuardedProxy(guard) as proxy:
+            results: list[tuple[int, bytes]] = []
+            workers = [
+                threading.Thread(
+                    target=lambda: results.append(
+                        proxy_get(proxy, f"http://127.0.0.1:{port}/vuln/")
+                    )
+                )
+                for _ in range(2)
+            ]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join(timeout=10)
+        assert [status for status, _ in results] == [200, 200]
+        assert state["peak"] == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

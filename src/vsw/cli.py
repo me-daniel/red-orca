@@ -11,7 +11,7 @@ from typing import Annotated, Any
 import typer
 
 from .budget import Budget
-from .coding_agent_gateway import CodingAgentGateway
+from .coding_agent_gateway import CodingAgentGateway, apply_reviewed_patch
 from .config import load_limits, repo_root
 from .domain import Role, TaskEnvelope
 from .orchestrator import run_mock_demo, run_observation
@@ -207,9 +207,6 @@ def delegate(
         list[str] | None,
         typer.Option("--pytest-path", help="Test path to run in the worktree. Repeatable."),
     ] = None,
-    integrate: bool = typer.Option(
-        False, "--integrate", help="Apply a clean, in-bounds implementation diff."
-    ),
     budget_usd: float = typer.Option(0.5, "--budget-usd"),
     timeout: float | None = typer.Option(
         None, "--timeout", help="Defaults by role: 120s advice/review, 300s implement."
@@ -247,7 +244,6 @@ def delegate(
         ),
         permitted_paths=permitted_path or [],
         pytest_paths=pytest_path or [],
-        integrate=integrate,
         escalation_reason=escalation_reason,
     )
     if dry_run:
@@ -279,6 +275,22 @@ def delegate(
     typer.echo("--- budget ---")
     typer.echo(json.dumps(budget.status(), indent=2))
     if result.status.value != "completed":
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def integrate(
+    patch: str = typer.Option(..., "--patch", help="Captured patch, stored under runs/."),
+    diff_sha: str = typer.Option(..., "--diff-sha", help="Digest of the reviewed diff."),
+    verdict: str = typer.Option(
+        ..., "--verdict", help="APPROVED, CHANGES_REQUESTED, or INCONCLUSIVE"
+    ),
+    tests_ok: bool = typer.Option(False, "--tests-ok", help="Required tests passed."),
+) -> None:
+    """Apply a reviewed implementation patch, or refuse and say why."""
+    outcome = apply_reviewed_patch(repo_root(), patch, diff_sha, verdict, tests_ok)
+    typer.echo(json.dumps(outcome, indent=2))
+    if not outcome["integrated"]:
         raise typer.Exit(code=1)
 
 

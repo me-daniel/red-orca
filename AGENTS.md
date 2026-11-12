@@ -21,6 +21,7 @@ uv run vsw lab down
 uv run vsw engagement validate --manifest configs/engagements/lab-local.yaml
 uv run vsw delegate --model claude --label opus --effort medium --prompt "..." --dry-run
 uv run vsw delegate --model codex --role implement --permitted-path 'src/**' --prompt "..."
+uv run vsw integrate --patch runs/<id>/patch.diff --diff-sha <sha256> --verdict APPROVED --tests-ok
 ```
 
 ## Invariants

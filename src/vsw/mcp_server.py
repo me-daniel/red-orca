@@ -7,7 +7,7 @@ import sys
 from typing import Any
 
 from .budget import Budget
-from .coding_agent_gateway import CodingAgentGateway
+from .coding_agent_gateway import CodingAgentGateway, apply_reviewed_patch
 from .config import load_limits, repo_root
 from .domain import Phase, Role, TaskEnvelope
 from .policy import BUILD_ROUTES, RoutingDenied, resolve_build_route
@@ -44,8 +44,8 @@ _TOOLS = [
         "description": (
             "Implement repository changes, or review them independently. Implementation "
             "runs in a separate git worktree, returns the changed files and diff, and is "
-            "blocked when a change falls outside permitted_paths; pass integrate=true to "
-            "apply a clean, in-bounds patch. Review is read-only and must not edit files. "
+            "blocked when a change falls outside permitted_paths. Review is read-only and "
+            "must not edit files. Integration is a separate call to integrate_patch. "
             "Codex does not give free-form architecture advice here."
         ),
         "inputSchema": {
@@ -71,7 +71,6 @@ _TOOLS = [
                     "items": {"type": "string"},
                     "description": "Test paths to run inside the worktree.",
                 },
-                "integrate": {"type": "boolean", "default": False},
                 "escalation_reason": {"type": "string"},
             },
             "required": ["prompt"],
@@ -172,11 +171,19 @@ class Server:
                     timeout_s=self._timeout(args, role),
                     permitted_paths=list(args.get("permitted_paths") or []),
                     pytest_paths=list(args.get("pytest_paths") or []),
-                    integrate=bool(args.get("integrate")),
                     escalation_reason=args.get("escalation_reason"),
                 )
                 result = self.gateway.run(envelope, str(args.get("prompt", "")))
                 return _ok(request_id, _tool_result(result.model_dump(mode="json")))
+            if name == "integrate_patch":
+                outcome = apply_reviewed_patch(
+                    self.root,
+                    str(args.get("patch_path", "")),
+                    str(args.get("diff_sha256", "")),
+                    str(args.get("review_verdict", "")),
+                    bool(args.get("tests_ok")),
+                )
+                return _ok(request_id, _tool_result(outcome))
             if name == "policy_check":
                 try:
                     route = resolve_build_route(

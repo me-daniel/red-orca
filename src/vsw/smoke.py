@@ -180,7 +180,6 @@ def run_smoke(mode: str = "mock", root: Path | None = None) -> dict[str, Any]:
         timeout_s=limits.implementation_timeout_seconds,
         permitted_paths=["clamp.py", "test_clamp.py"],
         pytest_paths=["test_clamp.py"],
-        integrate=False,
     )
     impl = gateway.run(impl_env, IMPLEMENT_PROMPT.format(advice=advice.output))
     report["results"].append(impl.model_dump(mode="json"))

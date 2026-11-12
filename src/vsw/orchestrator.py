@@ -287,10 +287,19 @@ def run_observation(
         "mutation_allowed": engagement.mutation_allowed,
         "manifest_sha256": manifest_hash(engagement),
     }
-    # A run only passes when evidence verifies and at least one adapter actually
-    # ran. "No findings" from a run where everything failed is not a clean bill.
+    # A run only passes when evidence verifies, at least one adapter ran, and
+    # every requested adapter completed. "No findings" from a run where the
+    # browser was skipped for https is incomplete coverage, not a clean bill.
     executed = [item for item in adapter_reports if item["status"] in {"completed", "partial"}]
-    run_status = "pass" if not integrity and executed else "fail"
+    incomplete = [
+        item for item in adapter_reports if item["status"] not in {"completed", "partial"}
+    ]
+    if integrity or not executed:
+        run_status = "fail"
+    elif incomplete or any(item["status"] != "completed" for item in adapter_reports):
+        run_status = "partial"
+    else:
+        run_status = "pass"
 
     payload: dict[str, Any] = {
         "run_id": run_id,

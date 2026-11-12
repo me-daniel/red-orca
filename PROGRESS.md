@@ -21,12 +21,20 @@ local Claude/Codex CLIs, and the local lab fixture.
 - Live smoke (mock is the default): Claude advises, Codex implements `clamp` in a
   worktree, Codex reviews and approves.
 
-## M1 — observation (done)
+## M1 — local HTTP observation (done, local fixtures only)
 
 - Engagement manifests with hash-bound human approval; loopback-only `lab` profile
   and private-address-blocking `observe` profile.
 - Scope guard covers redirects, browser subresources, methods, paths, exclusions,
   request budget, wall clock, and DNS/private-address escape.
+- The guard returns a pinned address and both HTTP adapters connect to it. A hostname
+  cannot pass the check with one address and connect with another (rebinding).
+- Path prefixes and exclusions match on segment boundaries, so `/vuln` does not
+  approve `/vulnerability`.
+- Every proxied request is checked individually, not only the adapter plan. Mutating
+  methods are refused unless the manifest approves mutations, and the proxy's
+  connection handlers share one concurrency limit sized by `max_concurrency`; the
+  rate limiter takes its slot under a lock.
 - A loopback forward proxy sits between the browser and the network, because
   Playwright's request interceptor never sees a server-side redirect hop. Measured
   against a live off-list origin, Chromium routes redirect, meta-refresh, script, and
@@ -40,6 +48,12 @@ local Claude/Codex CLIs, and the local lab fixture.
   escaped target content.
 - Clean control produces zero findings; the vulnerable fixture produces a validated
   reflection plus observed header/cookie/data-flow findings.
+- A run is `pass` only when evidence verifies and every requested adapter completed.
+  Missing or failed adapters make it `partial` or `fail`; there is no clean bill from
+  incomplete coverage.
+- Integration is a separate call. A captured patch is applied only when its tests
+  passed, its digest matches the diff the review saw, the review verdict is
+  `APPROVED`, and the patch is stored under `runs/`.
 
 ## Live, mocked, blocked
 
@@ -62,4 +76,5 @@ local Claude/Codex CLIs, and the local lab fixture.
 - Browser observation is Chromium-only. WebKit stays available for manual use but is
   refused by the adapter while it opens redirect hops outside the proxy.
 - HTTPS targets are refused, not tunnelled: a tunnel cannot be path-checked, so HTTPS
-  scope enforcement needs a decision before it is enabled.
+  scope enforcement needs a decision before it is enabled. M1 is therefore a local
+  HTTP observation milestone, not remote HTTPS coverage; an HTTPS-only run cannot pass.

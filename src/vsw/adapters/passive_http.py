@@ -10,7 +10,7 @@ import httpx
 from ..analysis import analyze_http
 from ..domain import CheckPlan, Engagement, Finding
 from ..evidence import MAX_BODY_BYTES, EvidenceRecord, EvidenceStore, redact_set_cookie
-from ..scope import ScopeDenied, ScopeGuard
+from ..scope import PinnedTarget, ScopeDenied, ScopeGuard
 from .base import BaseAdapter
 
 USER_AGENT = "vsw/0.1 (local lab observation)"
@@ -86,15 +86,19 @@ class PassiveHttpAdapter(BaseAdapter):
         records: list[EvidenceRecord] = []
         current = url
         for _ in range(MAX_REDIRECTS + 1):
+            if urlsplit(current).scheme != "http":
+                reason = "https observation is not enabled"
+                self.guard.record_blocked("request", current, reason)
+                self.failures.append(f"GET {current}: {reason}")
+                return records
             try:
-                self.guard.check(current, "GET")
+                target = self.guard.authorize(current, "GET")
             except ScopeDenied as exc:
                 self.guard.record_blocked("redirect" if records else "request", current, exc.reason)
                 return records
-            origin = self._origin(current)
-            self.guard.wait_for_rate(origin)
+            self.guard.wait_for_rate(target.origin)
             try:
-                body, size_capped, response = self._stream(current)
+                body, size_capped, response = self._stream(current, target)
             except httpx.HTTPError as exc:
                 self.guard.stop_reason = f"target unhealthy: {type(exc).__name__}"
                 self.guard.record_blocked(
@@ -119,7 +123,8 @@ class PassiveHttpAdapter(BaseAdapter):
                         redact_set_cookie(value)
                         for value in response.headers.get_list("set-cookie")
                     ],
-                    "final_url": str(response.url),
+                    "final_url": current,
+                    "peer": target.address,
                     "redirected": current != url,
                     "hop": len(records),
                     "download_capped": size_capped,
@@ -133,15 +138,30 @@ class PassiveHttpAdapter(BaseAdapter):
             return records
         return records
 
-    def _stream(self, url: str) -> tuple[bytes, bool, httpx.Response]:
-        """Download at most one body bound; never buffer an unbounded response."""
-        headers = {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"}
+    def _stream(self, url: str, target: PinnedTarget) -> tuple[bytes, bool, httpx.Response]:
+        """Download at most one body bound; never buffer an unbounded response.
+
+        The URL sent over the wire carries the address the guard checked, with
+        the approved hostname in `Host`. Re-resolving here would reopen the
+        rebinding gap the scope check exists to close.
+        """
+        parts = urlsplit(url)
+        netloc = target.url_host if target.port == 80 else f"{target.url_host}:{target.port}"
+        pinned = f"{target.scheme}://{netloc}{parts.path or '/'}"
+        if parts.query:
+            pinned = f"{pinned}?{parts.query}"
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,*/*",
+            "Host": target.host_header,
+        }
         with httpx.stream(
             "GET",
-            url,
+            pinned,
             headers=headers,
             timeout=self.timeout_s,
             follow_redirects=False,
+            trust_env=False,
         ) as response:
             chunks: list[bytes] = []
             total = 0

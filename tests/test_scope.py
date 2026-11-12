@@ -207,3 +207,56 @@ def test_manifest_hash_is_stable_across_reload(tmp_path):
     engagement = approve_manifest(path, "tester")
     assert manifest_hash(engagement) == manifest_hash(load_engagement(path))
     assert engagement.profile is Profile.LAB
+
+
+def test_path_prefix_stops_at_a_segment_boundary(tmp_path):
+    path = _write(tmp_path / "m.yaml")
+    approve_manifest(path, "tester")
+    guard = ScopeGuard(
+        load_engagement(path),
+        resolver=lambda host, _: [(2, 1, 6, "", ("127.0.0.1", 0))],
+    )
+    guard.check("http://127.0.0.1:8787/vuln")
+    guard.check("http://127.0.0.1:8787/vuln/echo")
+    with pytest.raises(ScopeDenied):
+        guard.check("http://127.0.0.1:8787/vulnerability")
+
+
+def test_excluded_path_stops_at_a_segment_boundary(tmp_path):
+    path = _write(tmp_path / "m.yaml")
+    approve_manifest(path, "tester")
+    guard = ScopeGuard(
+        load_engagement(path),
+        resolver=lambda host, _: [(2, 1, 6, "", ("127.0.0.1", 0))],
+    )
+    with pytest.raises(ScopeDenied):
+        guard.check("http://127.0.0.1:8787/vuln/delete")
+    guard.check("http://127.0.0.1:8787/vuln/deleted")  # newer path, not excluded
+
+
+def test_mutation_is_denied_even_when_the_method_is_listed(tmp_path):
+    path = _write(tmp_path / "m.yaml", methods=["GET", "POST"])
+    approve_manifest(path, "tester")
+    guard = ScopeGuard(
+        load_engagement(path),
+        resolver=lambda host, _: [(2, 1, 6, "", ("127.0.0.1", 0))],
+    )
+    with pytest.raises(ScopeDenied, match="changes state"):
+        guard.authorize("http://127.0.0.1:8787/vuln/action", "POST")
+    assert guard.requests == 0
+
+
+def test_authorize_pins_the_checked_address(tmp_path):
+    path = _write(tmp_path / "m.yaml", origin="http://rebind.example:8787")
+    approve_manifest(path, "tester")
+    guard = ScopeGuard(
+        load_engagement(path),
+        resolver=lambda host, _: [(2, 1, 6, "", ("127.0.0.1", 0))],
+    )
+    target = guard.authorize("http://rebind.example:8787/vuln/echo")
+
+    assert target.host == "rebind.example"
+    assert target.port == 8787
+    assert target.address == "127.0.0.1"
+    assert target.host_header == "rebind.example:8787"
+    assert target.origin == "http://rebind.example:8787"

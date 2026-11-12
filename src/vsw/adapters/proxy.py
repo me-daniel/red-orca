@@ -49,6 +49,9 @@ class GuardedProxy:
         self.errors: list[str] = []
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self._server.daemon_threads = True
+        # The browser opens connections in parallel; the manifest's concurrency
+        # limit has to govern them, not the adapter's intent.
+        self._slots = threading.BoundedSemaphore(max(1, int(guard.engagement.max_concurrency)))
         self._server.proxy = self  # type: ignore[attr-defined]
         self._thread = threading.Thread(
             target=self._server.serve_forever, name="vsw-proxy", daemon=True
@@ -78,6 +81,10 @@ class GuardedProxy:
         _respond(handler, 403, f"blocked by scope guard: {reason}".encode())
 
     def handle(self, handler: BaseHTTPRequestHandler) -> None:
+        with self._slots:
+            self._handle(handler)
+
+    def _handle(self, handler: BaseHTTPRequestHandler) -> None:
         url = handler.path
         method = handler.command
         if not url.startswith(("http://", "https://")):
@@ -85,28 +92,24 @@ class GuardedProxy:
         if urlsplit(url).scheme != "http":
             return self.deny(handler, url, "https is not proxied; refusing to tunnel")
         try:
-            self.guard.check(url, method)
+            target = self.guard.authorize(url, method)
         except ScopeDenied as exc:
             return self.deny(handler, url, exc.reason)
 
-        parts = urlsplit(url)
-        if not parts.hostname:
-            return self.deny(handler, url, "URL has no host")
-        origin = f"{parts.scheme}://{parts.hostname}:{parts.port or 80}"
-        self.guard.wait_for_rate(origin)
+        self.guard.wait_for_rate(target.origin)
         body = _request_body(handler)
-        target = parts.path or "/"
-        if parts.query:
-            target = f"{target}?{parts.query}"
+        path = target_uri(url)
         headers = {
             name: value for name, value in handler.headers.items() if name.lower() not in HOP_BY_HOP
         }
+        # Connect to the address the guard checked, never to a fresh lookup.
+        headers["Host"] = target.host_header
         try:
             connection = http.client.HTTPConnection(
-                parts.hostname, parts.port or 80, timeout=ORIGIN_TIMEOUT
+                target.address, target.port, timeout=ORIGIN_TIMEOUT
             )
             try:
-                connection.request(method, target, body=body or None, headers=headers)
+                connection.request(method, path, body=body or None, headers=headers)
                 response = connection.getresponse()
                 payload = response.read(MAX_RESPONSE_BYTES)
                 self._relay(handler, response, payload)
@@ -148,6 +151,13 @@ class _Handler(BaseHTTPRequestHandler):
         self.server.proxy.deny(  # type: ignore[attr-defined]
             self, self.path, "https is not proxied; refusing to tunnel"
         )
+
+
+def target_uri(url: str) -> str:
+    """Origin-form request target for an absolute URL."""
+    parts = urlsplit(url)
+    target = parts.path or "/"
+    return f"{target}?{parts.query}" if parts.query else target
 
 
 def _request_body(handler: BaseHTTPRequestHandler) -> bytes:

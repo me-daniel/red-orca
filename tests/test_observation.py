@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -79,3 +80,59 @@ def test_request_limit_stops_the_crawl(tmp_path, manifest, lab_server):
     report = run_observation(path, f"{lab_server}/vuln/", use_browser=False, root=tmp_path)
     assert report["coverage"]["requests_made"] <= 1
     assert report["coverage"]["stop_reason"] in {"request limit reached", ""}
+
+
+def test_https_target_cannot_pass_as_a_completed_run(tmp_path, manifest):
+    path = manifest(origin="https://127.0.0.1:443")
+    report = run_observation(path, "https://127.0.0.1:443/vuln/", use_browser=True, root=tmp_path)
+    assert report["status"] == "fail"
+    adapters = {item["adapter"]: item for item in report["adapters"]}
+    assert adapters["passive-http"]["status"] == "failed"
+    assert adapters["passive-http"]["note"].startswith("GET https://")
+    assert adapters["browser"]["status"] in {"failed", "unavailable"}
+
+
+def test_missing_browser_reports_partial_coverage(tmp_path, manifest, lab_server, monkeypatch):
+    from vsw.adapters.base import AdapterUnavailable
+    from vsw.adapters.browser import BrowserAdapter
+
+    def unavailable(self):
+        raise AdapterUnavailable("playwright is not installed")
+
+    monkeypatch.setattr(BrowserAdapter, "validate_config", unavailable)
+    report = run_observation(
+        manifest(), f"{lab_server}/vuln/echo?q=partial-run", use_browser=True, root=tmp_path
+    )
+    assert report["status"] == "partial"
+    adapters = {item["adapter"]: item for item in report["adapters"]}
+    assert adapters["passive-http"]["status"] == "completed"
+    assert adapters["browser"]["status"] == "unavailable"
+
+
+def test_passive_http_connects_to_the_checked_address(tmp_path, manifest, lab_server, monkeypatch):
+    import socket
+
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.scope import ScopeGuard, load_engagement
+
+    port = int(urlsplit(lab_server).port or 80)
+    engagement = load_engagement(manifest(origin=f"http://rebind.test:{port}"))
+    guard = ScopeGuard(
+        engagement,
+        resolver=lambda host, _: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))],
+    )
+    real = socket.getaddrinfo
+
+    def no_rebind(host, *args, **kwargs):
+        if host == "rebind.test":
+            raise OSError("hostname was resolved again after the scope check")
+        return real(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", no_rebind)
+    adapter = PassiveHttpAdapter(guard, EvidenceStore(tmp_path / "evidence"), engagement)
+    records = adapter.execute(
+        adapter.plan([f"http://rebind.test:{port}/vuln/echo?q=pinned-passive"])
+    )
+    assert records
+    assert records[0].status == 200
+    assert records[0].notes["peer"] == "127.0.0.1"

@@ -106,6 +106,11 @@ class BrowserAdapter(BaseAdapter):
                     for seed in plan.destinations:
                         if self.cancelled or self.guard.remaining_requests() <= 0:
                             break
+                        if urlsplit(seed).scheme != "http":
+                            reason = "https observation is not enabled"
+                            self.guard.record_blocked("navigation", seed, reason)
+                            self.failures.append(f"navigate {seed}: {reason}")
+                            continue
                         record = self._visit(browser, seed, PlaywrightError, proxy)
                         if record is not None:
                             records.append(record)

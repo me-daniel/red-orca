@@ -120,9 +120,10 @@ uv run vsw smoke --live # Claude Opus Medium advises, Codex Sol High implements 
 uv run vsw policy       # build allowlist and cyber-only exclusions
 ```
 
-Stage: **M1 observation**. `vsw lab up`, `vsw run`, and `vsw report` inspect a local
-fixture, capture hashed evidence, and produce a report; the clean control produces no
-findings. `PROGRESS.md` records what is live, mocked, and blocked. The build coordinator is DeepSeek V4.1 Flash via OpenCode. Claude and Codex are bounded delegates through a policy-checked gateway; cyber-only models are rejected during build. None of this is a live assessment.
+Stage: **M1 local HTTP observation**. `vsw lab up`, `vsw run`, and `vsw report` inspect
+a local fixture, capture hashed evidence, and produce a report; the clean control
+produces no findings. Scope is enforced per request against pinned addresses, and
+HTTPS is refused rather than tunnelled, so this stage is local HTTP only. `PROGRESS.md` records what is live, mocked, and blocked. The build coordinator is DeepSeek V4.1 Flash via OpenCode. Claude and Codex are bounded delegates through a policy-checked gateway; cyber-only models are rejected during build. None of this is a live assessment.
 
 ## Who this is for
 

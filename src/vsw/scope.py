@@ -13,6 +13,7 @@ import posixpath
 import socket
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -131,6 +132,20 @@ def _is_private_address(address: str) -> bool:
     )
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _under(path: str, prefix: str) -> bool:
+    """Segment-boundary prefix match.
+
+    `/vuln` covers `/vuln` and `/vuln/x`, never `/vulnerability`.
+    """
+    base = prefix.rstrip("/")
+    if not base:
+        return True
+    return path == base or path.startswith(base + "/")
+
+
 def _path_candidates(path: str) -> set[str]:
     """Every plausible reading of a request path.
 
@@ -141,6 +156,30 @@ def _path_candidates(path: str) -> set[str]:
     raw = path or "/"
     decoded = unquote(raw)
     return {raw, decoded, posixpath.normpath(raw), posixpath.normpath(decoded)}
+
+
+@dataclass(frozen=True)
+class PinnedTarget:
+    """An authorized request whose connection address is already decided.
+
+    Adapters must connect to `address`, not re-resolve `host`: a hostname can
+    answer with one address for the check and another for the connection.
+    """
+
+    scheme: str
+    host: str
+    port: int
+    address: str
+    origin: str
+
+    @property
+    def host_header(self) -> str:
+        default = 443 if self.scheme == "https" else 80
+        return self.host if self.port == default else f"{self.host}:{self.port}"
+
+    @property
+    def url_host(self) -> str:
+        return f"[{self.address}]" if ":" in self.address else self.address
 
 
 class ScopeGuard:
@@ -158,6 +197,7 @@ class ScopeGuard:
         self.started = now if now is not None else time.monotonic()
         self.resolver = resolver or socket.getaddrinfo
         self._lock = threading.Lock()
+        self._rate_lock = threading.Lock()
         self.requests = 0
         self.blocked: list[dict[str, str]] = []
         self.stop_reason = ""
@@ -200,12 +240,13 @@ class ScopeGuard:
         return addresses
 
     # -- checks ----------------------------------------------------------
-    def check(self, url: str, method: str = "GET", reserve: bool = True) -> None:
+    def authorize(self, url: str, method: str = "GET", reserve: bool = True) -> PinnedTarget:
         """Raise ScopeDenied unless this exact request is allowed right now.
 
-        A passing check reserves one request from the budget atomically, so a
-        request can never be dispatched beyond `max_requests`. Pass
-        `reserve=False` for a pre-flight check that will not send anything.
+        Returns the address the connection must use. A passing check reserves
+        one request from the budget atomically, so a request can never be
+        dispatched beyond `max_requests`. Pass `reserve=False` for a pre-flight
+        check that will not send anything.
         """
         parts = urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
@@ -216,17 +257,22 @@ class ScopeGuard:
             raise ScopeDenied(f"backslash in URL is ambiguous: {url}")
         if parts.username is not None or parts.password is not None:
             raise ScopeDenied(f"credentials in URL are not allowed: {url}")
-        if method.upper() not in self.engagement.methods:
-            raise ScopeDenied(f"method {method.upper()} is not approved")
+        upper = method.upper()
+        if upper not in self.engagement.methods:
+            raise ScopeDenied(f"method {upper} is not approved")
+        # A page can issue any approved method on its own. Mutations stay off
+        # unless the manifest says otherwise, whatever the adapter planned.
+        if not self.engagement.mutation_allowed and upper not in SAFE_METHODS:
+            raise ScopeDenied(f"method {upper} changes state and mutation is not approved")
         origin = self._origin_of(parts)
         if not self._approved_origin(origin):
             raise ScopeDenied(f"origin {origin} is not approved")
         for path in _path_candidates(parts.path):
             if self.engagement.exclude_paths and any(
-                path.startswith(prefix) for prefix in self.engagement.exclude_paths
+                _under(path, prefix) for prefix in self.engagement.exclude_paths
             ):
                 raise ScopeDenied(f"path {path} is excluded")
-            if not any(path.startswith(prefix) for prefix in self.engagement.path_prefixes):
+            if not any(_under(path, prefix) for prefix in self.engagement.path_prefixes):
                 raise ScopeDenied(f"path {path} is not approved")
         if self.expired():
             raise ScopeDenied("engagement has expired")
@@ -258,6 +304,18 @@ class ScopeGuard:
                 )
             if reserve:
                 self.requests += 1
+        default_port = 443 if parts.scheme == "https" else 80
+        return PinnedTarget(
+            scheme=parts.scheme,
+            host=parts.hostname,
+            port=parts.port or default_port,
+            address=addresses[0],
+            origin=origin,
+        )
+
+    def check(self, url: str, method: str = "GET", reserve: bool = True) -> None:
+        """Authorization without the pin, for callers that only need a verdict."""
+        self.authorize(url, method, reserve)
 
     def expired(self) -> bool:
         try:
@@ -266,14 +324,19 @@ class ScopeGuard:
             return True
 
     def wait_for_rate(self, origin: str) -> None:
-        """One request per origin at most every 1/max_rps seconds."""
+        """One request per origin at most every 1/max_rps seconds.
+
+        The proxy handles requests on several threads, so the slot is taken
+        under a lock; two connections cannot both read the same last-send time.
+        """
         interval = 1.0 / self.engagement.max_rps if self.engagement.max_rps > 0 else 0.0
-        last = self._last_request.get(origin)
-        if last is not None:
-            remaining = interval - (time.monotonic() - last)
-            if remaining > 0:
-                time.sleep(min(remaining, 5.0))
-        self._last_request[origin] = time.monotonic()
+        with self._rate_lock:
+            last = self._last_request.get(origin)
+            if last is not None:
+                remaining = interval - (time.monotonic() - last)
+                if remaining > 0:
+                    time.sleep(min(remaining, 5.0))
+            self._last_request[origin] = time.monotonic()
 
     def record_blocked(self, kind: str, url: str, reason: str) -> None:
         self.blocked.append({"kind": kind, "url": url, "reason": reason})

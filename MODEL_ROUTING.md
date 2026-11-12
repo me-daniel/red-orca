@@ -35,7 +35,7 @@ Prefer existing authorized Claude/Codex subscriptions for these delegates. Do no
 3. Implement with Codex. Each implementation runs in a throwaway `git worktree`, so a failed attempt cannot damage the user's working tree or index.
 4. Read the returned changed files, diff, and test result. A change outside `permitted_paths` blocks integration; nothing is applied until the coordinator has seen the diff.
 5. Review nontrivial changes with Codex in the `review` role, read-only, against the spec, the diff, and the test result. Review approval is not deployment or engagement authorization.
-6. Resolve findings, rerun the affected checks, integrate only the verified patch, then verify on the artifact.
+6. Resolve findings, rerun the affected checks, then integrate only the verified patch through the gated step: the implementation must have passed its required checks, the review verdict must be `APPROVED`, and the patch digest must match the diff the review saw. Integration is a separate call (`vsw integrate`, `integrate_patch`, or `CodingAgentGateway.integrate`), never a flag on the implementation run. Verify on the artifact after applying.
 
 Two failed attempts at the same problem are a signal to change approach, not to repeat blindly.
 

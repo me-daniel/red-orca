@@ -13,6 +13,7 @@ from vsw.coding_agent_gateway import (
     ClaudeCliAdapter,
     CodexCliAdapter,
     CodingAgentGateway,
+    apply_reviewed_patch,
     reject_outside_paths,
 )
 from vsw.config import Limits, load_limits
@@ -223,7 +224,7 @@ def test_out_of_bounds_change_blocks_and_never_integrates(git_repo: Path) -> Non
     )
     gw = gateway(git_repo, {"codex": adapter})
     result = gw.run(
-        envelope(permitted_paths=["src/**"], pytest_paths=["test_ok.py"], integrate=True),
+        envelope(permitted_paths=["src/**"], pytest_paths=["test_ok.py"]),
         "implement",
     )
 
@@ -237,14 +238,19 @@ def test_out_of_bounds_change_blocks_and_never_integrates(git_repo: Path) -> Non
     assert result.tests == {}
 
 
-def test_in_bounds_change_integrates(git_repo: Path) -> None:
+def test_in_bounds_change_is_applied_only_after_approval(git_repo: Path) -> None:
     adapter = RecordingAdapter(files={"src/ok.py": "VALUE = 1\n"})
     gw = gateway(git_repo, {"codex": adapter})
-    result = gw.run(envelope(permitted_paths=["src/**"], integrate=True), "implement")
+    result = gw.run(envelope(permitted_paths=["src/**"]), "implement")
 
     assert result.status == Status.COMPLETED
     assert result.changed_files == ["src/ok.py"]
-    assert result.integrated is True
+    assert result.diff_sha256
+    assert result.integrated is False
+    assert not (git_repo / "src" / "ok.py").exists()
+
+    approved = gw.integrate(result, "APPROVED", result.diff_sha256)
+    assert approved.integrated is True
     assert (git_repo / "src" / "ok.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
 
@@ -259,7 +265,44 @@ def test_in_bounds_change_is_not_applied_without_integrate(git_repo: Path) -> No
     assert Path(result.patch_path or "").exists()
 
 
-def test_failing_tests_do_not_block_the_result(git_repo: Path) -> None:
+def test_integration_requires_the_reviewed_digest(git_repo: Path) -> None:
+    adapter = RecordingAdapter(files={"src/ok.py": "VALUE = 1\n"})
+    gw = gateway(git_repo, {"codex": adapter})
+    result = gw.run(envelope(permitted_paths=["src/**"]), "implement")
+
+    blocked = gw.integrate(result, "APPROVED", "0" * 64)
+    assert blocked.status is Status.BLOCKED
+    assert blocked.integrated is False
+    assert "does not match the captured diff" in blocked.limitations[-1]
+    assert not (git_repo / "src" / "ok.py").exists()
+
+
+def test_integration_requires_an_approved_verdict(git_repo: Path) -> None:
+    adapter = RecordingAdapter(files={"src/ok.py": "VALUE = 1\n"})
+    gw = gateway(git_repo, {"codex": adapter})
+    result = gw.run(envelope(permitted_paths=["src/**"]), "implement")
+
+    for verdict in ("CHANGES_REQUESTED", "INCONCLUSIVE", ""):
+        blocked = gw.integrate(result, verdict, result.diff_sha256)
+        assert blocked.integrated is False
+        assert "not APPROVED" in blocked.limitations[-1]
+    assert not (git_repo / "src" / "ok.py").exists()
+
+
+def test_integration_refuses_a_patch_changed_after_review(git_repo: Path) -> None:
+    adapter = RecordingAdapter(files={"src/ok.py": "VALUE = 1\n"})
+    gw = gateway(git_repo, {"codex": adapter})
+    result = gw.run(envelope(permitted_paths=["src/**"]), "implement")
+    patch = Path(result.patch_path or "")
+    patch.write_text(patch.read_text(encoding="utf-8") + "tampered\n", encoding="utf-8")
+
+    blocked = gw.integrate(result, "APPROVED", result.diff_sha256)
+    assert blocked.integrated is False
+    assert "does not match the reviewed digest" in blocked.limitations[-1]
+    assert not (git_repo / "src" / "ok.py").exists()
+
+
+def test_failing_tests_fail_the_implementation_and_block_integration(git_repo: Path) -> None:
     adapter = RecordingAdapter(
         files={
             "src/ok.py": "VALUE = 1\n",
@@ -272,6 +315,22 @@ def test_failing_tests_do_not_block_the_result(git_repo: Path) -> None:
         "implement",
     )
 
-    assert result.status == Status.COMPLETED
+    assert result.status == Status.FAILED
     assert result.tests["ok"] is False
     assert "pytest failed" in result.limitations[0]
+
+    blocked = gw.integrate(result, "APPROVED", result.diff_sha256)
+    assert blocked.integrated is False
+    assert "only a completed implementation" in blocked.limitations[-1]
+    assert not (git_repo / "src" / "ok.py").exists()
+
+
+def test_patch_outside_runs_is_refused(git_repo: Path) -> None:
+    outside = git_repo.parent / "outside.patch"
+    outside.write_text("diff --git a/x b/x\n", encoding="utf-8")
+    import hashlib
+
+    digest = hashlib.sha256(outside.read_bytes()).hexdigest()
+    outcome = apply_reviewed_patch(git_repo, str(outside), digest, "APPROVED", True)
+    assert outcome["integrated"] is False
+    assert "not stored under runs/" in outcome["reason"]

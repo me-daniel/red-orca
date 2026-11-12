@@ -45,7 +45,6 @@ class TaskEnvelope(BaseModel):
     timeout_s: float = 120.0
     permitted_paths: list[str] = Field(default_factory=lambda: ["**"])
     pytest_paths: list[str] = Field(default_factory=list)
-    integrate: bool = False
     permitted_tools: list[str] = Field(default_factory=lambda: ["text"])
     escalation_reason: str | None = None
 
@@ -64,6 +63,7 @@ class TaskResult(BaseModel):
     usage: dict[str, object] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
     diff: str = ""
+    diff_sha256: str = ""
     patch_path: str | None = None
     integrated: bool = False
     cost_usd: float = 0.0

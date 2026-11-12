@@ -12,6 +12,7 @@ Roles are enforced here, not in prompts:
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import shutil
 import subprocess
@@ -275,6 +276,70 @@ def reject_outside_paths(changed: list[str], permitted: list[str]) -> list[str]:
     return [path for path in changed if not _path_allowed(path, permitted)]
 
 
+def apply_reviewed_patch(
+    root: Path,
+    patch_path: str,
+    expected_sha256: str,
+    review_verdict: str,
+    tests_ok: bool,
+) -> dict[str, Any]:
+    """Apply a captured patch only when checks and review cover this exact diff.
+
+    Three facts must agree: the patch on disk, the digest the reviewer saw, and
+    the digest recorded when the implementation was captured.
+    """
+    verdict = (review_verdict or "").strip().upper()
+    if not tests_ok:
+        return {"integrated": False, "reason": "required tests did not pass"}
+    if verdict != "APPROVED":
+        return {
+            "integrated": False,
+            "reason": f"review verdict is {verdict or 'missing'}, not APPROVED",
+        }
+    path = Path(patch_path)
+    if not path.is_absolute():
+        path = root / path
+    try:
+        resolved = path.resolve()
+        resolved.relative_to((root / "runs").resolve())
+    except (OSError, ValueError):
+        return {"integrated": False, "reason": "patch is not stored under runs/"}
+    try:
+        patch = resolved.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {"integrated": False, "reason": f"cannot read patch: {exc}"}
+    actual = hashlib.sha256(patch.encode("utf-8")).hexdigest()
+    if not expected_sha256 or actual != expected_sha256:
+        return {"integrated": False, "reason": "patch content does not match the reviewed digest"}
+    check = subprocess.run(
+        ["git", "apply", "--check", "-"],
+        cwd=str(root),
+        input=patch,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if check.returncode != 0:
+        return {
+            "integrated": False,
+            "reason": f"patch does not apply cleanly: {strip_ansi(check.stderr)[-200:]}",
+        }
+    applied = subprocess.run(
+        ["git", "apply", "-"],
+        cwd=str(root),
+        input=patch,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if applied.returncode != 0:
+        return {
+            "integrated": False,
+            "reason": f"git apply failed: {strip_ansi(applied.stderr)[-200:]}",
+        }
+    return {"integrated": True, "reason": "", "sha256": actual}
+
+
 class WorktreeError(RuntimeError):
     pass
 
@@ -294,7 +359,13 @@ def _worktree_remove(root: Path, target: Path) -> None:
     _git("worktree", "prune", cwd=root)
 
 
-def _collect_changes(worktree: Path) -> tuple[list[str], str]:
+def _collect_changes(worktree: Path) -> tuple[list[str], str, bool]:
+    """Changed paths, diff text, and whether the diff exceeded the bound.
+
+    A truncated diff is not reviewable and not integrable: the coordinator
+    cannot approve what it was not shown, and applying the full patch would
+    apply text nobody reviewed.
+    """
     _git("add", "-A", "-N", cwd=worktree)
     status = _git("status", "--porcelain", cwd=worktree)
     changed: list[str] = []
@@ -305,11 +376,11 @@ def _collect_changes(worktree: Path) -> tuple[list[str], str]:
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
         changed.append(path)
-    diff = _git("diff", "--binary", cwd=worktree).stdout or ""
-    if len(diff) > MAX_PATCH_CHARS:
-        diff = diff[:MAX_PATCH_CHARS] + "\n…[diff truncated]\n"
+    full = _git("diff", "--binary", cwd=worktree).stdout or ""
+    truncated = len(full) > MAX_PATCH_CHARS
+    diff = full[:MAX_PATCH_CHARS] + "\n…[diff truncated]\n" if truncated else full
     _git("reset", "-q", cwd=worktree)
-    return sorted(changed), diff
+    return sorted(changed), diff, truncated
 
 
 def _run_pytest(worktree: Path, paths: list[str], timeout: float) -> dict[str, object]:
@@ -413,6 +484,45 @@ class CodingAgentGateway:
             return self._run_implementation(envelope, route, adapter, prompt, timeout)
         return self._run_advisory(envelope, route, adapter, prompt, timeout)
 
+    # -- integration ------------------------------------------------------
+    def integrate(
+        self,
+        result: TaskResult,
+        review_verdict: str,
+        reviewed_diff_sha256: str,
+    ) -> TaskResult:
+        """Apply a captured implementation only after an independent review.
+
+        Kept out of `run`: a review happens after the diff exists, so integration
+        is always a second, explicit step over the same captured patch.
+        """
+        reason = ""
+        if result.status is not Status.COMPLETED:
+            reason = "only a completed implementation can be integrated"
+        elif reviewed_diff_sha256 != result.diff_sha256 or not result.diff_sha256:
+            reason = "the review digest does not match the captured diff"
+        else:
+            # No configured checks means nothing failed; a recorded failure
+            # always blocks integration.
+            tests_ok = not result.tests or result.tests.get("ok") is True
+            outcome = apply_reviewed_patch(
+                self.root,
+                result.patch_path or "",
+                result.diff_sha256,
+                review_verdict,
+                tests_ok,
+            )
+            if outcome["integrated"]:
+                return result.model_copy(update={"integrated": True})
+            reason = str(outcome["reason"])
+        return result.model_copy(
+            update={
+                "status": Status.BLOCKED,
+                "integrated": False,
+                "limitations": [*result.limitations, reason],
+            }
+        )
+
     def _run_advisory(
         self,
         envelope: TaskEnvelope,
@@ -479,6 +589,8 @@ class CodingAgentGateway:
         limitation = ""
         changed: list[str] = []
         diff = ""
+        diff_truncated = False
+        diff_sha256 = ""
         tests: dict[str, object] = {}
         out: AdapterOutput | None = None
         try:
@@ -488,11 +600,13 @@ class CodingAgentGateway:
         try:
             out = adapter.run(envelope, route, prompt, timeout, worktree)
             self.budget.record(out.cost_usd)
-            changed, diff = _collect_changes(worktree)
+            changed, diff, diff_truncated = _collect_changes(worktree)
             bad = reject_outside_paths(changed, envelope.permitted_paths)
             patch_path: str | None = None
             integrated = False
-            if diff.strip():
+            if diff.strip() and not diff_truncated:
+                diff_sha256 = hashlib.sha256(diff.encode("utf-8")).hexdigest()
+            if diff.strip() and not diff_truncated:
                 safe_id = "".join(ch if ch.isalnum() or ch in "-._" else "-" for ch in envelope.id)
                 patch_dir = self.root / "runs" / safe_id
                 patch_dir.mkdir(parents=True, exist_ok=True)
@@ -509,35 +623,13 @@ class CodingAgentGateway:
             else:
                 tests = _run_pytest(worktree, envelope.pytest_paths, timeout)
                 if tests and not tests.get("ok"):
-                    status = Status.COMPLETED
-                    limitation = f"{out.note}; pytest failed: {tests.get('detail', '')}".strip("; ")
+                    # Failing required checks is a failed implementation, not a
+                    # completed one with a note.
+                    status = Status.FAILED
+                    limitation = f"pytest failed: {tests.get('detail', '')}".strip("; ")
                 else:
                     status = Status.COMPLETED
                     limitation = out.note
-            if status is Status.COMPLETED and envelope.integrate and diff.strip():
-                check = subprocess.run(
-                    ["git", "apply", "--check", "-"],
-                    cwd=str(self.root),
-                    input=diff,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if check.returncode == 0:
-                    subprocess.run(
-                        ["git", "apply", "-"],
-                        cwd=str(self.root),
-                        input=diff,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    integrated = True
-                else:
-                    limitation = (
-                        f"{limitation}; patch did not apply cleanly: "
-                        f"{strip_ansi(check.stderr)[-200:]}"
-                    ).strip("; ")
         except AdapterError as exc:
             return _result(
                 envelope,
@@ -559,6 +651,7 @@ class CodingAgentGateway:
             changed_files=changed,
             tests=tests,
             diff=diff,
+            diff_sha256=diff_sha256,
             patch_path=patch_path,
             integrated=integrated,
             usage={
