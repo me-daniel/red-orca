@@ -147,12 +147,21 @@ def doctor(
                 continue
             seen_providers.add(provider.name)
             key_present = bool(os.environ.get(provider.api_key_env))
+            enabled_routes = [
+                route.name
+                for route in model_config.routes.values()
+                if route.provider == provider.name and route.enabled
+            ]
+            key_detail = f"{provider.api_key_env} {'set' if key_present else 'missing'}"
+            if enabled_routes:
+                key_detail += f"; enabled: {', '.join(enabled_routes)}"
+            else:
+                key_detail += "; no routes enabled"
             _result(
                 checks,
                 f"model_key:{provider.name}",
                 key_present,
-                f"{provider.api_key_env} {'set' if key_present else 'missing'}; "
-                "runtime routes stay disabled until enabled",
+                key_detail,
                 required=False,
             )
         for route in model_config.routes.values():
