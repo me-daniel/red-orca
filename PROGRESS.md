@@ -170,6 +170,20 @@ local Claude/Codex CLIs, and the local lab fixture.
   Generated prose, comments, documentation, and user-facing text use English.
 - AntiFox integration and Strix comparison remain pending; full M2 is not complete.
 
+## First company passive run (2026-11-13)
+
+- Branch `engagement/vorsprung-first-passive`; approved `observe` manifest
+  `configs/engagements/vorsprungpartners.observe.yaml` (verbal owner approval,
+  public GET only, 100 requests, 1 rps, 10 minutes, expiry 2026-11-20).
+- Deterministic passive run `obs-20261113-005235-000`: pass, one request, six
+  observed findings, clean evidence integrity. No validated vulnerability.
+- Live assessment `assess-20261113-010337-000`: pass; DeepSeek plan + GLM triage;
+  four requests; all six findings triaged `needs_evidence`.
+- Visual evidence captured separately with a no-click Chromium pass; see
+  `docs/engagements/evidence/vorsprung-home.jpg`.
+- Report draft inputs: `docs/engagements/vorsprung-first-run-results.md`.
+  No active validation, authentication, forms, uploads, or API testing was done.
+
 ## Live, mocked, blocked
 
 | Item | State |
@@ -191,9 +205,9 @@ local Claude/Codex CLIs, and the local lab fixture.
 - Browser evidence is DOM/HTML plus request metadata; no screenshots yet.
 - Browser observation is Chromium-only. WebKit stays available for manual use but is
   refused by the adapter while it opens redirect hops outside the proxy.
-- HTTPS targets are refused, not tunnelled: a tunnel cannot be path-checked, so HTTPS
-  scope enforcement needs a decision before it is enabled. M1 is therefore a local
-  HTTP observation milestone, not remote HTTPS coverage; an HTTPS-only run cannot pass.
+- Passive HTTPS is supported with a pinned address and SNI certificate
+  verification. Browser HTTPS remains refused because the proxy cannot
+  path-check CONNECT; the first company run used passive HTTPS only.
 - Runtime routes are disabled unless enabled after evaluation. `plan` and
   `triage` are enabled for local lab/observe; fallback and optional routes remain
   disabled. Enabling another route requires a successful `vsw models check` and

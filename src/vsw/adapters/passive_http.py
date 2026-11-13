@@ -17,6 +17,7 @@ from .base import BaseAdapter
 USER_AGENT = "vsw/0.1 (local lab observation)"
 MAX_REDIRECTS = 5
 ACTION_HINTS = ("logout", "signout", "delete", "remove", "reset", "action=", "confirm")
+TEMPLATE_HINTS = ("{{", "}}", "{%", "${")
 
 
 class _ProgressStream(httpx.SyncByteStream):
@@ -111,11 +112,6 @@ class PassiveHttpAdapter(BaseAdapter):
         records: list[EvidenceRecord] = []
         current = url
         for _ in range(MAX_REDIRECTS + 1):
-            if urlsplit(current).scheme != "http":
-                reason = "https observation is not enabled"
-                self.guard.record_blocked("request", current, reason)
-                self.failures.append(f"GET {current}: {reason}")
-                return records
             try:
                 target = self.guard.authorize(current, "GET")
             except ScopeDenied as exc:
@@ -205,6 +201,21 @@ class PassiveHttpAdapter(BaseAdapter):
         }
         if not self._allow_compression:
             headers["Accept-Encoding"] = "identity"
+        if target.scheme == "https":
+            # Connect to the checked address, but present the approved hostname
+            # for SNI and certificate verification. The top-level httpx.stream
+            # helper does not expose request extensions.
+            with (
+                httpx.Client(timeout=self.timeout_s, trust_env=False) as client,
+                client.stream(
+                    "GET",
+                    pinned,
+                    headers=headers,
+                    follow_redirects=False,
+                    extensions={"sni_hostname": target.host},
+                ) as response,
+            ):
+                return self._read_stream(response)
         with httpx.stream(
             "GET",
             pinned,
@@ -213,28 +224,31 @@ class PassiveHttpAdapter(BaseAdapter):
             follow_redirects=False,
             trust_env=False,
         ) as response:
-            if self._progress_check is not None:
-                self._progress_check()
-                assert isinstance(response.stream, httpx.SyncByteStream)
-                response.stream = _ProgressStream(response.stream, self._progress_check)
-            if not self._allow_compression and response.headers.get(
-                "content-encoding", ""
-            ).strip().lower() not in {
-                "",
-                "identity",
-            }:
-                raise ScopeDenied("validation requires an uncompressed response")
-            chunks: list[bytes] = []
-            total = 0
-            capped = False
-            for chunk in response.iter_bytes():
-                chunks.append(chunk)
-                total += len(chunk)
-                if total >= MAX_BODY_BYTES:
-                    capped = True
-                    chunks = [b"".join(chunks)[:MAX_BODY_BYTES]]
-                    break
-            return b"".join(chunks), capped, response
+            return self._read_stream(response)
+
+    def _read_stream(self, response: httpx.Response) -> tuple[bytes, bool, httpx.Response]:
+        if self._progress_check is not None:
+            self._progress_check()
+            assert isinstance(response.stream, httpx.SyncByteStream)
+            response.stream = _ProgressStream(response.stream, self._progress_check)
+        if not self._allow_compression and response.headers.get(
+            "content-encoding", ""
+        ).strip().lower() not in {
+            "",
+            "identity",
+        }:
+            raise ScopeDenied("validation requires an uncompressed response")
+        chunks: list[bytes] = []
+        total = 0
+        capped = False
+        for chunk in response.iter_bytes():
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= MAX_BODY_BYTES:
+                capped = True
+                chunks = [b"".join(chunks)[:MAX_BODY_BYTES]]
+                break
+        return b"".join(chunks), capped, response
 
     def _links(self, record: EvidenceRecord) -> list[str]:
         """Same-origin GET links only, no action URLs, bounded."""
@@ -253,9 +267,21 @@ class PassiveHttpAdapter(BaseAdapter):
                 target = dict(attrs).get("href")
                 if not target or target.startswith(("#", "mailto:", "javascript:")):
                     return
+                if any(hint in target for hint in TEMPLATE_HINTS):
+                    return
                 absolute = urljoin(base, target)
                 parts = urlsplit(absolute)
                 if parts.query or parts.fragment:
+                    return
+                if (
+                    parts.scheme,
+                    parts.hostname,
+                    parts.port,
+                ) != (
+                    urlsplit(base).scheme,
+                    urlsplit(base).hostname,
+                    urlsplit(base).port,
+                ):
                     return
                 lowered = absolute.lower()
                 if any(hint in lowered for hint in ACTION_HINTS):
@@ -267,7 +293,8 @@ class PassiveHttpAdapter(BaseAdapter):
 
     def _origin(self, url: str) -> str:
         parts = urlsplit(url)
-        return f"{parts.scheme}://{parts.hostname}:{parts.port or 80}"
+        default = 443 if parts.scheme == "https" else 80
+        return f"{parts.scheme}://{parts.hostname}:{parts.port or default}"
 
     def normalize(self, records: list[EvidenceRecord]) -> list[Finding]:
         findings: list[Finding] = []

@@ -157,8 +157,9 @@ lab checks**. `vsw lab up`,
 `vsw run`, and `vsw report` inspect a local fixture, capture hashed evidence, and
 produce a report; the clean control produces no findings. `vsw assess` adds a
 bounded planner and advisory triager around that observation pipeline. Scope is
-enforced per request against pinned addresses, and HTTPS is refused rather than
-tunnelled, so this stage is local HTTP only. Each observation run writes
+enforced per request against pinned addresses. Passive HTTPS uses a pinned
+address with SNI certificate verification; browser HTTPS remains refused rather
+than tunnelled. Each observation run writes
 `report.md`, `findings.json` (the CLI's full run payload), `coverage.json`,
 `exchanges.json` (a metadata index linked to evidence IDs), and `run.json`;
 assessments add `assessment.json` and `assessment.md`. Failed evidence integrity

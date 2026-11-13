@@ -1,36 +1,42 @@
 # Vorsprung Partners first passive run
 
-Status: **DRAFT. No live request has been sent.**  
+Status: **Passive run completed 2026-11-13.**  
 Target: `vorsprungpartners.com` (company-owned)  
 Profile: `observe`  
-Draft manifest: `configs/engagements/vorsprungpartners.observe.draft.yaml`
+Approved manifest: `configs/engagements/vorsprungpartners.observe.yaml`  
+Manifest SHA-256: `e1ae9cae7e582b10925edebb536ef683ab800ce26c9e7392a71e54493e2c4562`  
+Results: `docs/engagements/vorsprung-first-run-results.md`
 
-This is a preparation branch. It exists so the first authorized run can be
-reviewed, approved, executed, and reported without expanding scope mid-run.
+This branch records the first authorized passive run and the evidence needed to
+draft a report. It used public GET requests only.
 
-## Required before the first request
+## Run readiness (completed)
 
-- [ ] Replace the draft `authorization_ref` with the written authorization or
-      internal approval reference.
-- [ ] Confirm the exact origins. The draft lists `https://vorsprungpartners.com`
-      and `https://www.vorsprungpartners.com`; remove either if it is out of scope.
-- [ ] Confirm or change the exclusion list. The draft excludes sensitive and
-      state-changing paths, including `/admin`, `/wp-admin`, login/logout,
-      account, cart, checkout, and `/api`.
-- [ ] Confirm the request cap, rate, wall-clock cap, and expiry. The draft uses
-      100 GETs, 1 request/second, 10 minutes, and expires 2026-11-20.
-- [ ] Record the stop contact and data-retention policy. The current manifest
-      schema does not carry separate fields for them, so put them in the
-      authorization reference or extend the manifest schema before approval.
-- [ ] Resolve the HTTPS decision. The current runner refuses HTTPS rather than
-      tunnelling it. A live public site almost certainly uses HTTPS, so the run
-      cannot start until a path-checked HTTPS transport or an approved local
-      staging target is available.
-- [ ] Add screenshot capture to the browser evidence path. The current browser
-      adapter stores DOM/HTML and request metadata, not images. Visual findings
-      need a hashed screenshot tied to the visited URL and finding.
-- [ ] A human approves the manifest hash:
-      `uv run vsw engagement approve --manifest <file> --approver <name>`.
+- [x] Authorization reference recorded: verbal approval from owner daniel on
+      2026-11-13 for public GET-only observation through 2026-11-20.
+- [x] Origins confirmed: `https://vorsprungpartners.com` and
+      `https://www.vorsprungpartners.com`.
+- [x] Exclusions and limits set: sensitive/action paths excluded; 100 GETs,
+      1 request/second, 10 minutes.
+- [x] Data retention stated as local-only in the authorization reference. The
+      stop contact is not a separate manifest field; record it in the report.
+- [x] Passive HTTPS supported with a pinned address and SNI certificate
+      verification. Browser HTTPS remains outside the normal browser adapter.
+- [x] Visual capture completed as a separate one-off browser step with declared
+      rendering dependencies; permanent adapter integration remains pending.
+- [x] Manifest approved and validated at the hash above.
+
+## Execution record
+
+- Deterministic passive run: `obs-20261113-005235-000` — pass, one request,
+  six observed findings, clean evidence integrity.
+- Live multi-agent assessment: `assess-20261113-010337-000` — pass, DeepSeek
+  plan + GLM triage, four observation requests, all six findings triaged
+  `needs_evidence`.
+- Visual evidence: `docs/engagements/evidence/vorsprung-home.jpg`, captured
+  from the public homepage in Chromium after a no-click scroll pass.
+- No validated vulnerability was found. The findings are hardening
+  observations, not confirmed exploitable issues.
 
 ## Intended run
 
@@ -72,6 +78,7 @@ Use this structure when the run has real evidence:
 
 ## Current state
 
-No findings are documented here. The preliminary work was performed only against
-the local lab fixture; see `docs/preliminary-lab-pentest.md`. Do not copy lab
-findings into a Vorsprung report.
+The passive run and live assessment are complete. See
+`docs/engagements/vorsprung-first-run-results.md` for findings, evidence hashes,
+the screenshot, model usage, and limitations. Do not copy lab findings into this
+report, and do not treat observed hardening gaps as validated vulnerabilities.

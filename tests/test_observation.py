@@ -595,3 +595,65 @@ def test_runtime_records_machine_coverage_with_valid_evidence(tmp_path, manifest
     assert "### Coverage ledger" in markdown
     assert "| machine |" in markdown
     assert "per-check negative coverage was not measured" in markdown
+
+
+def test_https_stream_pins_address_and_sni(tmp_path, manifest, monkeypatch):
+    from contextlib import contextmanager
+
+    import httpx
+
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.scope import PinnedTarget, ScopeGuard, load_engagement
+
+    engagement = load_engagement(manifest(origin="https://example.com"))
+    guard = ScopeGuard(
+        engagement,
+        resolver=lambda host, _: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+    seen: dict[str, object] = {}
+
+    @contextmanager
+    def fake_stream(client, method, url, **kwargs):
+        seen["url"] = url
+        seen["kwargs"] = kwargs
+        request = httpx.Request(method, url)
+        yield httpx.Response(200, request=request, content=b"ok")
+
+    monkeypatch.setattr(httpx.Client, "stream", fake_stream)
+    adapter = PassiveHttpAdapter(guard, EvidenceStore(tmp_path / "evidence"), engagement)
+    target = PinnedTarget(
+        scheme="https",
+        host="example.com",
+        port=443,
+        address="93.184.216.34",
+        origin="https://example.com",
+    )
+    body, capped, _ = adapter._stream("https://example.com/", target)
+    assert body == b"ok" and capped is False
+    assert seen["url"] == "https://93.184.216.34:443/"
+    assert seen["kwargs"]["extensions"] == {"sni_hostname": "example.com"}
+    assert seen["kwargs"]["headers"]["Host"] == "example.com"
+
+
+def test_passive_links_skip_templates_and_external_origins(tmp_path, manifest):
+    from vsw.adapters.passive_http import PassiveHttpAdapter
+    from vsw.domain import Engagement
+    from vsw.evidence import EvidenceRecord
+    from vsw.scope import ScopeGuard, load_engagement
+
+    engagement: Engagement = load_engagement(manifest())
+    adapter = PassiveHttpAdapter(
+        ScopeGuard(engagement), EvidenceStore(tmp_path / "evidence"), engagement
+    )
+    record = EvidenceRecord(
+        id="E-001",
+        kind="http",
+        url="https://vorsprungpartners.com/",
+        body=(
+            '<a href="{{ l.href }}">template</a>'
+            '<a href="/about">about</a>'
+            '<a href="https://www.linkedin.com/company/example/">external</a>'
+        ),
+        notes={"content_type": "text/html"},
+    )
+    assert adapter._links(record) == ["https://vorsprungpartners.com/about"]

@@ -1,0 +1,33 @@
+id: vorsprungpartners-observe
+owner: daniel
+approver: daniel
+authorization_ref: Verbal approval from owner daniel on 2026-11-13 for passive GET-only
+  public observation of company-owned pages through 2026-11-20.
+profile: observe
+expires_at: '2026-11-20T00:00:00Z'
+origins:
+- https://vorsprungpartners.com
+- https://www.vorsprungpartners.com
+methods:
+- GET
+path_prefixes:
+- /
+exclude_paths:
+- /admin
+- /wp-admin
+- /login
+- /logout
+- /account
+- /cart
+- /checkout
+- /api
+mutation_allowed: false
+max_requests: 100
+max_rps: 1.0
+max_wall_seconds: 600.0
+max_concurrency: 1
+approval:
+  approved: true
+  approved_by: daniel
+  approved_at: '2026-11-13T00:50:32Z'
+  approved_manifest_sha256: e1ae9cae7e582b10925edebb536ef683ab800ce26c9e7392a71e54493e2c4562
