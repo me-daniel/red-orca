@@ -166,6 +166,7 @@ local Claude/Codex CLIs, and the local lab fixture.
   each produced one validated finding; both clean controls produced zero. Each
   check used one request and passed evidence integrity verification.
 - Commands, supported encoding profile, and limits: `docs/m2-validation.md`.
+  Preliminary lab results: `docs/preliminary-lab-pentest.md`.
   Generated prose, comments, documentation, and user-facing text use English.
 - AntiFox integration and Strix comparison remain pending; full M2 is not complete.
 

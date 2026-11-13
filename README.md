@@ -148,7 +148,9 @@ uv run vsw lab down
 ```
 
 The [M2 lab validation guide](docs/m2-validation.md) covers the opt-in HTML
-injection and open redirect checks, their clean controls, and their limits.
+injection and open redirect checks, their clean controls, and their limits. The
+[preliminary lab penetration test](docs/preliminary-lab-pentest.md) records the
+current results and the next AntiFox step.
 
 Stage: **M1 local HTTP observation, lean multi-agent assessment, and initial M2
 lab checks**. `vsw lab up`,
