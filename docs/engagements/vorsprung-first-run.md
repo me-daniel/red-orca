@@ -80,5 +80,9 @@ Use this structure when the run has real evidence:
 
 The passive run and live assessment are complete. See
 `docs/engagements/vorsprung-first-run-results.md` for findings, evidence hashes,
-the screenshot, model usage, and limitations. Do not copy lab findings into this
+the screenshot, model usage, and limitations. Its follow-up review adds two
+manual runtime observations, public German-page coverage, and dependency advisory
+triage. The combined report has eight observations and no validated exploits;
+reconciliation with the owner's known vulnerabilities remains open.
+Do not copy lab findings into this
 report, and do not treat observed hardening gaps as validated vulnerabilities.

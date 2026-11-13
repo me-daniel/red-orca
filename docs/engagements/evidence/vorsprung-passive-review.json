@@ -1,0 +1,192 @@
+{
+  "review_id": "vorsprung-report-review",
+  "manifest_sha256": "e1ae9cae7e582b10925edebb536ef683ab800ce26c9e7392a71e54493e2c4562",
+  "records": [
+    {
+      "id": "E-001",
+      "url": "https://vorsprungpartners.com/",
+      "status": 200,
+      "captured_at": "2026-11-13T01:29:17Z",
+      "body_bytes": 109506,
+      "body_sha256": "d48a1d82e92fdd1fe6e1a57f6749d0f3137c4f328304741b28d6ab9a0b3d3110",
+      "record_sha256": "76de3e008b47ef5dba0fcb05a37ee40b0a0000ee6f92af4ef4f007921eae960b",
+      "truncated": false
+    },
+    {
+      "id": "E-002",
+      "url": "https://vorsprungpartners.com/support.js",
+      "status": 200,
+      "captured_at": "2026-11-13T01:29:17Z",
+      "body_bytes": 69150,
+      "body_sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe",
+      "record_sha256": "4dafd8752633a7e62cb7ec8dd28d397f6616507681886e9865ad3472d41a1096",
+      "truncated": false
+    },
+    {
+      "id": "E-003",
+      "url": "https://vorsprungpartners.com/robots.txt",
+      "status": 200,
+      "captured_at": "2026-11-13T01:29:18Z",
+      "body_bytes": 75,
+      "body_sha256": "7f28add6d8610762d1d5e00b57c20d698104eb14e5d546b4be31de2dbebe3ed7",
+      "record_sha256": "7db4c3b15205da108fc108855c3bb777a391d3510c6869dbf9a261749acae95c",
+      "truncated": false
+    },
+    {
+      "id": "E-004",
+      "url": "https://vorsprungpartners.com/sitemap.xml",
+      "status": 200,
+      "captured_at": "2026-11-13T01:29:20Z",
+      "body_bytes": 866,
+      "body_sha256": "f6497b7744e5ec3406268a92dd6d78f6309cb766093da95b2dafe21e9fe0ebc5",
+      "record_sha256": "6f9564b2ee9f198f58c0f64b37754ddf9d2220d055def963ca7940c7bedc752e",
+      "truncated": false
+    },
+    {
+      "id": "E-005",
+      "url": "https://vorsprungpartners.com/.well-known/security.txt",
+      "status": 404,
+      "captured_at": "2026-11-13T01:29:21Z",
+      "body_bytes": 3657,
+      "body_sha256": "122ee29a3e4525b42e61306e54388a350e0af4c4eed18d42169792cc40f22705",
+      "record_sha256": "79ebc4450060355322f2985857ac86b7a9c3f903db662d09c976895aa2e43650",
+      "truncated": false
+    },
+    {
+      "id": "E-006",
+      "url": "https://vorsprungpartners.com/de/",
+      "status": 200,
+      "captured_at": "2026-11-13T01:36:06Z",
+      "body_bytes": 113883,
+      "body_sha256": "158f68a60874f60b15bccaf1ae5260c54343db465bfb193fb3697ab1f0db26e7",
+      "record_sha256": "a4cfdbe0898dab7c3ce608c398dd5bea40c2cd00b44272783bf7cdf8d8b5df14",
+      "truncated": false
+    }
+  ],
+  "dependency_declarations": [
+    {
+      "constant": "REACT_URL",
+      "url": "https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+    },
+    {
+      "constant": "REACT_DOM_URL",
+      "url": "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+    },
+    {
+      "constant": "BABEL_URL",
+      "url": "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+    }
+  ],
+  "dependency_extraction": {
+    "url": "https://vorsprungpartners.com/support.js",
+    "status": 200,
+    "body_sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe",
+    "truncated": false
+  },
+  "requests": 7,
+  "additional_standalone_script_run": {
+    "run_id": "obs-20261113-012743-000",
+    "requests": 1
+  },
+  "limitations": [
+    "Public GET-only observation and static response review; no active validation.",
+    "Dependency declarations are not proof that a particular bundle executed.",
+    "The dependency-only GET is bound by its raw body hash; it did not produce a separate full evidence record.",
+    "Raw response body hashes precede storage redaction; stored records have independent record hashes."
+  ],
+  "script_excerpts": [
+    {
+      "first_line": 842,
+      "last_line": 850,
+      "text": "  function evalDcLogic(src) {\n    //! nosemgrep: eval-and-function-constructor\n    const fn = new Function(\n      \"DCLogic\",\n      \"StreamableLogic\",\n      \"React\",\n      src + '\\n;return (typeof Component!==\"undefined\"&&Component)||undefined;'\n    );\n    return fn(StreamableLogic, StreamableLogic, getReact());"
+    },
+    {
+      "first_line": 1205,
+      "last_line": 1223,
+      "text": "        if (pre) return pre.text();\n        return fetch(url).then((r) => {\n          if (!r.ok) throw new Error(\"HTTP \" + r.status);\n          return r.text();\n        });\n      }).then((src) => {\n        const code = kind === \"jsx\" ? window.Babel.transform(src, {\n          filename: url,\n          presets: [\"react\", \"typescript\"]\n        }).code : src;\n        const module = { exports: {} };\n        const before = new Set(Object.keys(window));\n        //! nosemgrep: eval-and-function-constructor\n        new Function(\"React\", \"module\", \"exports\", \"require\", code)(\n          getReact(),\n          module,\n          module.exports,\n          () => ({})\n        );"
+    },
+    {
+      "first_line": 1407,
+      "last_line": 1419,
+      "text": "    window.addEventListener(\"message\", (e) => {\n      const type = e.data && e.data.type;\n      if (type === \"__dc_theme\") {\n        const t = e.data.theme;\n        if (t === \"light\" || t === \"dark\") {\n          appTheme = t;\n          applyCanvasBg();\n        }\n        return;\n      }\n      if (!designDocMode || type !== \"__dc_probe\") return;\n      postDesignMode(designDocMode);\n    });"
+    },
+    {
+      "first_line": 1740,
+      "last_line": 1748,
+      "text": "    function dcUpdate(name, kind, content, streaming) {\n      if (streaming) registry.get(name).fetched = true;\n      if (kind === \"html\") {\n        setStreaming(name, \"html\", !!streaming);\n        updateHtml(name, content);\n      } else if (kind === \"js\") {\n        setStreaming(name, \"js\", !!streaming);\n        if (!streaming) updateJs(name, content);\n      } else if (kind === \"props\") {"
+    },
+    {
+      "first_line": 1854,
+      "last_line": 1868,
+      "text": "    const notifyHost = () => {\n      if (window.parent === window) return;\n      const r = runtime.registry.entries[rootName];\n      try {\n        window.parent.postMessage(\n          {\n            type: \"__dc_booted\",\n            rootName,\n            propsMeta: r && r.propsMeta || null,\n            preview: r && r.preview || null\n          },\n          \"*\"\n        );\n      } catch {\n      }"
+    },
+    {
+      "first_line": 1871,
+      "last_line": 1878,
+      "text": "    const api = {\n      __dcUpdate: (name, kind, content, streaming, viewportKey) => {\n        streams.push(name, streaming, viewportKey);\n        runtime.dcUpdate(name, kind, content, streaming);\n        if (name === rootName && !streaming && kind === \"props\") notifyHost();\n      },\n      __dcStreaming: (name) => streams.live(name),\n      __dcSetProps: (name, overrides) => runtime.setProps(name, overrides),"
+    },
+    {
+      "first_line": 1901,
+      "last_line": 1904,
+      "text": "    Object.assign(window, api);\n    window.__dcContentKeyed = true;\n    if (document.readyState !== \"loading\") api.__dcBoot();\n    else document.addEventListener(\"DOMContentLoaded\", () => api.__dcBoot());"
+    }
+  ],
+  "initial_observation": {
+    "run_id": "obs-20261113-005235-000",
+    "id": "E-001",
+    "url": "https://vorsprungpartners.com",
+    "status": 200,
+    "captured_at": "2026-11-13T00:52:35Z",
+    "body_sha256": "d48a1d82e92fdd1fe6e1a57f6749d0f3137c4f328304741b28d6ab9a0b3d3110",
+    "record_sha256": "edf0dcd616e8341cc46938612b31933b536417503ddd40d58adfaf02acae4d5e",
+    "body_bytes": 109506,
+    "requests": 1
+  },
+  "model_assessment": {
+    "run_id": "assess-20261113-010337-000",
+    "observation_requests": 4,
+    "planner": "deepseek-v4.1-flash",
+    "triager": "glm-5.3-flash",
+    "effort": "high",
+    "model_calls": 2,
+    "charged_usd": 0,
+    "finding_triage": "needs_evidence for all six initial findings; advisory only"
+  },
+  "visual_evidence": {
+    "repository_path": "docs/engagements/evidence/vorsprung-home.jpg",
+    "sha256": "04906c54aa71161227b3e23ccee91bfaa5477e2fe0b05639c9496032addb9cb9",
+    "requests": 38,
+    "limitation": "Historical capture allowed external rendering dependencies outside the two-origin manifest; separate authorization is not bound by its hash."
+  },
+  "manual_checks": [
+    {
+      "id": "F-007",
+      "check_version": "manual.runtime-evaluation/1",
+      "state": "observed",
+      "severity": "info",
+      "confidence_in_observation": "high",
+      "first_seen": "2026-11-13T01:29:17Z",
+      "last_seen": "2026-11-13T01:29:17Z",
+      "evidence": "vorsprung-report-review/E-002",
+      "reproduction": "Retrieve the public support.js and inspect evalDcLogic, the external module loader, dcUpdate, and window API publication. Static inspection only.",
+      "impact_limit": "No attacker-controlled input reaching evaluation demonstrated; no XSS or server RCE proved.",
+      "remediation": "Precompile production components and remove unnecessary editor hooks; test CSP without unsafe-eval.",
+      "regression": "Load both language pages under the intended enforced CSP; verify functionality, absence of unwanted hooks, and no string-evaluation requirement."
+    },
+    {
+      "id": "F-008",
+      "check_version": "manual.messaging-origin/1",
+      "state": "observed",
+      "severity": "info",
+      "confidence_in_observation": "high",
+      "first_seen": "2026-11-13T01:29:17Z",
+      "last_seen": "2026-11-13T01:29:17Z",
+      "evidence": "vorsprung-report-review/E-002",
+      "related_weakness": "CWE-346; impact unvalidated",
+      "reproduction": "Inspect the message listener and outgoing __dc_booted/design-mode postMessage calls. No cross-origin interaction tested.",
+      "impact_limit": "Theme/probe messages only; no script-update handler, sensitive leak, or visible state change demonstrated.",
+      "remediation": "Remove editor messaging or require exact trusted origins, expected source windows, and schemas; avoid wildcard recipients.",
+      "regression": "On an approved isolated or staging copy, verify untrusted origins cannot alter state or receive metadata; verify trusted integration works."
+    }
+  ]
+}
