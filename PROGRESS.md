@@ -141,23 +141,33 @@ local Claude/Codex CLIs, and the local lab fixture.
 - `plan` and `triage` are enabled for local lab/observe. Fallback and optional
   routes remain disabled.
 
-## M2 validation candidate (not integrated)
+## M2 deterministic lab validation (integrated; engines pending)
 
-- Prepared opt-in, loopback-lab-only HTML injection and open redirect checks,
-  a `vsw validate` command, clean controls, and capture-linked reproduction.
-- Independent review requested changes for ambiguous HTML parsing and HTTPX
-  request normalization. The corrected candidate rejects uncertain script/frameset
-  contexts and captures the actual dispatched request and response metadata.
-- Candidate verification: 320 tests passed, Ruff passed, and mypy passed on
-  26 source files. Focused tests include real loopback HTTP and mocked transports;
-  local Chromium comparisons checked the identified parser boundaries.
-- Corrected patch remains under `runs/m2-parserfix/impl.patch`, outside the main
-  source tree. The user approved a ninth read-only review after the eight-call
-  limit; it requested changes for response charset handling: ASCII probe bytes
-  declared as UTF-16LE can be misread as UTF-8 and falsely validated. Encoding/BOM
-  guards, regression tests, and independent re-review are required. No integration,
-  commit, or push occurred.
-- AntiFox integration and Strix comparison remain pending; this does not complete M2.
+- `vsw validate --target URL --check html-injection|open-redirect` selects inert
+  GET checks against one explicitly approved HTTP loopback lab target. It does
+  not crawl or follow redirects. Ordinary `run` and `assess` remain passive.
+- HTML injection requires a fresh parsed marker and a complete captured exchange;
+  it does not claim JavaScript execution. Redirect validation requires the exact
+  marker destination in a 3xx Location header without contacting that destination.
+- Scope approval, pinned addresses, paths, methods, request/rate limits, expiry,
+  and cooperative cancellation are rechecked before dispatch and around raw
+  response chunks. Compressed responses and incomplete exchanges cannot validate.
+- HTML encoding is checked from bounded transport bytes before display decoding.
+  Unsupported charset/BOM/meta cases retain evidence but report incomplete
+  coverage. Script and frameset documents require further browser verification.
+- Captures retain actual request target/header metadata, the fixed transport's
+  HTTP/1.1 request version, and the separately reported response protocol. Findings
+  require verified reproduction, exchange/evidence links, and capture timestamps.
+- Independent read-only review approved the exact integrated patch. Verification
+  on main: **376 tests passed**, Ruff passed, and mypy passed on 26 source files.
+  Tests include real loopback fixtures and explicitly mocked transports. Separate
+  Chromium comparisons used intercepted synthetic responses to check encoding.
+- Live CLI verification on `127.0.0.1:8789`: vulnerable HTML and redirect fixtures
+  each produced one validated finding; both clean controls produced zero. Each
+  check used one request and passed evidence integrity verification.
+- Commands, supported encoding profile, and limits: `docs/m2-validation.md`.
+  Generated prose, comments, documentation, and user-facing text use English.
+- AntiFox integration and Strix comparison remain pending; full M2 is not complete.
 
 ## Live, mocked, blocked
 
@@ -168,7 +178,7 @@ local Claude/Codex CLIs, and the local lab fixture.
 | Lab fixture, passive HTTP, Playwright Chromium + scope proxy | live, loopback only; fixture default `127.0.0.1:8789` avoids AntiFox 8787/8788 |
 | Container runtime for M2 | verified 2026-11-12: Colima running, Docker server 29.5.2 (aarch64), Compose 5.7.1 |
 | AntiFox / Strix | integration and engine-boundary validation pending; container runtime available |
-| M2 validation checks | tested candidate; independent re-review and integration pending |
+| M2 validation checks | live: reviewed HTML injection and open redirect checks, loopback lab only |
 | Runtime model routes (OpenCode Go, OpenRouter) | `plan`/`triage` enabled for lab/observe after live evaluation; other routes disabled |
 
 ## Known limits

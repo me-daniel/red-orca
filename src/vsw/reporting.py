@@ -134,12 +134,12 @@ def render_markdown(
     for finding in findings:
         counts[finding.state.value] = counts.get(finding.state.value, 0) + 1
     validated = counts.get(FindingState.VALIDATED.value, 0)
-    record_index = {
-        str(item["id"]): item for item in evidence if item.get("id")
-    }
+    record_index = {str(item["id"]): item for item in evidence if item.get("id")}
 
+    validation_run = any(item.get("adapter") == "validation" for item in adapters)
+    report_kind = "validation" if validation_run else "observation"
     lines: list[str] = [
-        f"# vsw observation report — {_md(run_id, 80)}",
+        f"# vsw {report_kind} report — {_md(run_id, 80)}",
         "",
         f"- Started: {_md(started, 40)}",
         f"- Finished: {_md(finished, 40)}",
@@ -265,13 +265,10 @@ def render_markdown(
             if finding.cwe:
                 lines.append(f"- CWE: `{_md(finding.cwe, 40)}`")
             if finding.cvss_score is not None:
-                lines.append(
-                    f"- CVSS: {finding.cvss_score:.1f} `{_md(finding.cvss_vector, 120)}`"
-                )
+                lines.append(f"- CVSS: {finding.cvss_score:.1f} `{_md(finding.cvss_vector, 120)}`")
             if finding.exchange_ids:
                 lines.append(
-                    "- HTTP exchanges: "
-                    + ", ".join(_md(item, 40) for item in finding.exchange_ids)
+                    "- HTTP exchanges: " + ", ".join(_md(item, 40) for item in finding.exchange_ids)
                 )
             if finding.assumptions:
                 lines.append("- Assumptions:")
@@ -319,8 +316,17 @@ def render_markdown(
         "",
         "## Untested areas and limits",
         "",
-        f"- Observation profile: `{_md(engagement.get('profile', ''), 40)}`; no payloads were sent.",
-        "- Only GET requests and rendered pages were observed.",
+        (
+            f"- Validation profile: `{_md(engagement.get('profile', ''), 40)}`; "
+            "inert HTML and redirect markers were sent; no browser or script execution."
+            if validation_run
+            else f"- Observation profile: `{_md(engagement.get('profile', ''), 40)}`; no payloads were sent."
+        ),
+        (
+            "- Only explicit GET probes were sent; redirects were not followed and no crawl ran."
+            if validation_run
+            else "- Only GET requests and rendered pages were observed."
+        ),
         "- Authentication, two-account authorization, uploads, and business logic were not tested.",
     ]
     for adapter in adapters:
@@ -412,7 +418,9 @@ def write_observation_artifacts(
     if evidence_integrity:
         for finding in safe_findings:
             finding.state = FindingState.INCONCLUSIVE
-            finding.limitations.append("Evidence integrity failed; the finding cannot be confirmed.")
+            finding.limitations.append(
+                "Evidence integrity failed; the finding cannot be confirmed."
+            )
     exported_findings = [finding_export(finding, record_index) for finding in safe_findings]
     safe_coverage = Coverage.model_validate(redact_value(coverage.model_dump(mode="json")))
     if evidence_integrity:
@@ -431,7 +439,7 @@ def write_observation_artifacts(
     payload: dict[str, Any] = {
         "run_id": run_id,
         "status": status,
-        "stage": "M1",
+        "stage": "M2" if any(item.get("adapter") == "validation" for item in adapters) else "M1",
         "mode": "live-local",
         "started": started,
         "finished": finished,
@@ -491,7 +499,9 @@ def write_observation_artifacts(
             "target": payload["target"],
             "engagement": engagement_summary["id"],
             "findings": len(exported_findings),
-            "validated": sum(item["state"] == FindingState.VALIDATED.value for item in exported_findings),
+            "validated": sum(
+                item["state"] == FindingState.VALIDATED.value for item in exported_findings
+            ),
             "evidence_integrity": payload["evidence_integrity"],
             "status": status,
         },

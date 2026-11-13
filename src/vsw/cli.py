@@ -369,9 +369,7 @@ models_app = typer.Typer(no_args_is_help=True, help="Inspect or check runtime mo
 app.add_typer(models_app, name="models")
 
 
-def _route_payload(
-    name: str, route: ModelRoute, provider: ProviderConfig
-) -> dict[str, object]:
+def _route_payload(name: str, route: ModelRoute, provider: ProviderConfig) -> dict[str, object]:
     return {
         "name": name,
         "provider": provider.name,
@@ -593,6 +591,32 @@ def run(
     except ScopeError as exc:
         typer.echo(json.dumps({"decision": "blocked", "reason": str(exc)}, indent=2))
         raise typer.Exit(code=1)
+    _print_observation_result(report)
+
+
+@app.command()
+def validate(
+    target: Annotated[str, typer.Option("--target", help="One explicit loopback lab URL.")],
+    check: Annotated[
+        list[str],
+        typer.Option(
+            "--check", help="html-injection or open-redirect; repeat for multiple checks."
+        ),
+    ],
+    manifest: Path = MANIFEST_OPTION,
+) -> None:
+    """Run selected inert validation checks and write captured evidence and reports."""
+    from .scope import ScopeError
+
+    try:
+        report = run_observation(manifest, target, validation_checks=check)
+    except (ScopeError, ValueError) as exc:
+        typer.echo(json.dumps({"decision": "blocked", "reason": str(exc)}, indent=2))
+        raise typer.Exit(code=1)
+    _print_observation_result(report)
+
+
+def _print_observation_result(report: dict[str, Any]) -> None:
     typer.echo(
         json.dumps(
             {
@@ -623,9 +647,7 @@ def assess(
     ),
     mode: str = typer.Option("mock", "--mode", help="mock or live."),
     plan_route: str = typer.Option("plan", "--plan-route", help="Configured planning route."),
-    triage_route: str = typer.Option(
-        "triage", "--triage-route", help="Configured triage route."
-    ),
+    triage_route: str = typer.Option("triage", "--triage-route", help="Configured triage route."),
     browser: bool = typer.Option(True, "--browser/--no-browser", help="Use Playwright."),
     evaluate: bool = typer.Option(
         False,
@@ -642,9 +664,7 @@ def assess(
         raise typer.Exit(code=2)
     if evaluate and normalized != "live":
         typer.echo(
-            json.dumps(
-                {"status": "error", "reason": "--evaluate requires --mode live"}, indent=2
-            )
+            json.dumps({"status": "error", "reason": "--evaluate requires --mode live"}, indent=2)
         )
         raise typer.Exit(code=2)
     try:

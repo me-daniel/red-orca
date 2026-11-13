@@ -143,10 +143,15 @@ fallback. Engagement origins are pinned, so an override needs a matching approve
 ```bash
 uv run vsw lab up
 uv run vsw run --target http://127.0.0.1:8789/vuln/
+uv run vsw validate --target http://127.0.0.1:8789/vuln/echo --check html-injection
 uv run vsw lab down
 ```
 
-Stage: **M1 local HTTP observation plus lean multi-agent assessment**. `vsw lab up`,
+The [M2 lab validation guide](docs/m2-validation.md) covers the opt-in HTML
+injection and open redirect checks, their clean controls, and their limits.
+
+Stage: **M1 local HTTP observation, lean multi-agent assessment, and initial M2
+lab checks**. `vsw lab up`,
 `vsw run`, and `vsw report` inspect a local fixture, capture hashed evidence, and
 produce a report; the clean control produces no findings. `vsw assess` adds a
 bounded planner and advisory triager around that observation pipeline. Scope is

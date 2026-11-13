@@ -10,6 +10,7 @@ from typing import Any
 from .adapters.base import Adapter, AdapterUnavailable
 from .adapters.browser import BrowserAdapter
 from .adapters.passive_http import PassiveHttpAdapter
+from .adapters.validation import CHECKS, ValidationAdapter
 from .budget import Budget
 from .config import load_limits, repo_root
 from .domain import CheckPlan, Coverage, Engagement, Finding, FindingState, Severity
@@ -191,11 +192,12 @@ def _check_adapter_evidence(
                 or check is None
                 or not check.verified
                 or any(
-                    not set(step.evidence_ids) <= set(finding.evidence_ids)
-                    for step in detail.steps
+                    not set(step.evidence_ids) <= set(finding.evidence_ids) for step in detail.steps
                 )
             ):
-                errors.append(f"{name}: validated finding {finding.check_id} lacks captured reproduction")
+                errors.append(
+                    f"{name}: validated finding {finding.check_id} lacks captured reproduction"
+                )
                 bad_adapters.add(name)
     return errors, bad_adapters
 
@@ -250,9 +252,19 @@ def run_observation(
     root: Path | None = None,
     targets: list[str] | None = None,
     run_dir: Path | None = None,
+    validation_checks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Inspect scoped targets, capture hashed evidence, write a report."""
     root = root or repo_root()
+    if validation_checks is not None:
+        if (
+            not validation_checks
+            or any(check not in CHECKS for check in validation_checks)
+            or len(set(validation_checks)) != len(validation_checks)
+        ):
+            raise ScopeError("checks must be nonempty, unique registered validation checks")
+        if (targets is None and target is None) or (targets is not None and len(targets) != 1):
+            raise ScopeError("validation requires exactly one explicit target")
     engagement: Engagement = load_engagement(manifest_path)
     guard = ScopeGuard(engagement)
 
@@ -280,11 +292,19 @@ def run_observation(
     started = utc_now()
 
     seeds = list(targets)
-    adapters: list[Adapter] = [
-        PassiveHttpAdapter(guard, store, engagement),
-    ]
-    if use_browser:
-        adapters.append(BrowserAdapter(guard, store, engagement))
+    adapters: list[Adapter]
+    validation_plan: CheckPlan | None = None
+    if validation_checks is not None:
+        validation_adapter = ValidationAdapter(guard, store, engagement, validation_checks)
+        # Preflight the explicit validation target and every final probe before
+        # execution, allowing configuration errors to reach the CLI as blocked.
+        validation_plan = validation_adapter.plan(seeds)
+        _check_plan(validation_adapter, validation_plan, guard)
+        adapters = [validation_adapter]
+    else:
+        adapters = [PassiveHttpAdapter(guard, store, engagement)]
+        if use_browser:
+            adapters.append(BrowserAdapter(guard, store, engagement))
 
     findings: list[Finding] = []
     returned: dict[str, list[EvidenceRecord]] = {}
@@ -311,7 +331,11 @@ def run_observation(
         try:
             entry["capabilities"] = sorted(adapter.capabilities())
             adapter.validate_config()
-            plan = adapter.plan(adapter_seeds)
+            plan = (
+                validation_plan
+                if adapter.name == "validation" and validation_plan is not None
+                else adapter.plan(adapter_seeds)
+            )
             _check_plan(adapter, plan, guard)
             records = adapter.execute(plan)
             if not isinstance(records, list) or not all(
@@ -335,9 +359,10 @@ def run_observation(
             if failures and entry["status"] in {"completed", "partial"}:
                 entry["status"] = "partial" if entry["requests"] else "failed"
                 entry["note"] = "; ".join(failures[:3])
-            if not any(record.kind in {"http", "browser"} for record in records) and entry[
-                "status"
-            ] == "completed":
+            if (
+                not any(record.kind in {"http", "browser"} for record in records)
+                and entry["status"] == "completed"
+            ):
                 entry["status"] = "partial"
                 entry["note"] = "adapter completed without observation captures"
             for record in records:
@@ -419,8 +444,10 @@ def run_observation(
     ]
     if integrity or not executed:
         run_status = "fail"
-    elif coverage.stop_reason or incomplete or any(
-        item["status"] != "completed" for item in adapter_reports
+    elif (
+        coverage.stop_reason
+        or incomplete
+        or any(item["status"] != "completed" for item in adapter_reports)
     ):
         run_status = "partial"
     else:

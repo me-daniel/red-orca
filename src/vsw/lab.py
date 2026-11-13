@@ -196,6 +196,16 @@ def create_app() -> FastAPI:
     def clean_about() -> str:
         return CLEAN_ABOUT
 
+    @app.get("/clean/echo", response_class=HTMLResponse)
+    def clean_echo(q: str = "") -> HTMLResponse:
+        return HTMLResponse(
+            f'<!doctype html><html><body><div id="out">{html.escape(q)}</div></body></html>'
+        )
+
+    @app.get("/clean/open-redirect")
+    def clean_open_redirect() -> RedirectResponse:
+        return RedirectResponse("/clean/", status_code=302)
+
     @app.get("/robots.txt", response_class=PlainTextResponse)
     def robots() -> str:
         return "User-agent: *\nDisallow:\n"
@@ -227,7 +237,9 @@ def lab_url(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def start_lab(root: Path, port: int = DEFAULT_LAB_PORT, wait_seconds: float = 15.0) -> dict[str, Any]:
+def start_lab(
+    root: Path, port: int = DEFAULT_LAB_PORT, wait_seconds: float = 15.0
+) -> dict[str, Any]:
     """Start the lab in the background and wait until it answers."""
     state_file = state_path(root)
     if state_file.exists():

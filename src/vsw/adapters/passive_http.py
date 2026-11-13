@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterator
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -16,6 +17,28 @@ from .base import BaseAdapter
 USER_AGENT = "vsw/0.1 (local lab observation)"
 MAX_REDIRECTS = 5
 ACTION_HINTS = ("logout", "signout", "delete", "remove", "reset", "action=", "confirm")
+
+
+class _ProgressStream(httpx.SyncByteStream):
+    """Check policy around every raw read, including decoder-buffered chunks."""
+
+    def __init__(self, stream: httpx.SyncByteStream, check: Callable[[], None]) -> None:
+        self.stream = stream
+        self.check = check
+
+    def __iter__(self) -> Iterator[bytes]:
+        chunks = iter(self.stream)
+        while True:
+            self.check()
+            try:
+                chunk = next(chunks)
+            except StopIteration:
+                return
+            self.check()
+            yield chunk
+
+    def close(self) -> None:
+        self.stream.close()
 
 
 class PassiveHttpAdapter(BaseAdapter):
@@ -35,6 +58,8 @@ class PassiveHttpAdapter(BaseAdapter):
         self.timeout_s = timeout_s
         self.visited: list[str] = []
         self.failures: list[str] = []
+        self._progress_check: Callable[[], None] | None = None
+        self._allow_compression = True
 
     def capabilities(self) -> set[str]:
         return {
@@ -178,6 +203,8 @@ class PassiveHttpAdapter(BaseAdapter):
             "Accept": "text/html,*/*",
             "Host": target.host_header,
         }
+        if not self._allow_compression:
+            headers["Accept-Encoding"] = "identity"
         with httpx.stream(
             "GET",
             pinned,
@@ -186,6 +213,17 @@ class PassiveHttpAdapter(BaseAdapter):
             follow_redirects=False,
             trust_env=False,
         ) as response:
+            if self._progress_check is not None:
+                self._progress_check()
+                assert isinstance(response.stream, httpx.SyncByteStream)
+                response.stream = _ProgressStream(response.stream, self._progress_check)
+            if not self._allow_compression and response.headers.get(
+                "content-encoding", ""
+            ).strip().lower() not in {
+                "",
+                "identity",
+            }:
+                raise ScopeDenied("validation requires an uncompressed response")
             chunks: list[bytes] = []
             total = 0
             capped = False

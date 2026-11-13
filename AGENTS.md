@@ -31,6 +31,7 @@ uv run vsw assess --mode live          # same loop through enabled runtime route
 
 ## Invariants
 
+- Keep generated prose, documentation, comments, and user-facing text in English; translate or omit Chinese text.
 - Build phase rejects cyber-only models (GPT-6 Sol, Luna) and unsupported efforts.
 - Roles are fixed and enforced in the gateway: Claude advises in text only, Codex
   implements in a worktree and reviews read-only. Never ask one for the other's role.
