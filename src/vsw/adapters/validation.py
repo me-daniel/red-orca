@@ -171,6 +171,7 @@ class ValidationAdapter(PassiveHttpAdapter):
         self._plan: CheckPlan | None = None
         self._plan_snapshot = ""
         self._probes: dict[str, tuple[str, str]] = {}
+        self._probe_by_marker: dict[str, tuple[str, str]] = {}
         self._captured: dict[str, dict[str, Any]] = {}
         self._html_bodies: dict[str, str] = {}
         self._executed = False
@@ -259,6 +260,7 @@ class ValidationAdapter(PassiveHttpAdapter):
             self._pin(url)  # Authorize the full final URL, not merely the seed.
             probes[url] = (check, marker)
         self._probes = probes
+        self._probe_by_marker = {marker: (check, marker) for check, marker in probes.values()}
         self._plan = CheckPlan(
             adapter=self.name,
             destinations=list(probes),
@@ -399,9 +401,13 @@ class ValidationAdapter(PassiveHttpAdapter):
         if self.store.verify():
             return findings
         for record in records:
-            if record.id in seen or record.url not in self._probes:
+            if record.id in seen:
                 continue
-            check, marker = self._probes[record.url]
+            probe_marker = str(record.notes.get("marker", ""))
+            probe = self._probe_by_marker.get(probe_marker)
+            if probe is None or record.notes.get("check") != probe[0]:
+                continue
+            check, marker = probe
             if (
                 record.kind != "http"
                 or record.method != "GET"

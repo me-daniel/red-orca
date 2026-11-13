@@ -86,6 +86,24 @@ def test_real_pinned_positive(tmp_path, manifest, lab_server, check, path, cwe):
         assert "No JavaScript execution or session impact tested" in finding.limitations
 
 
+def test_redacted_query_parameters_do_not_break_normalization(
+    tmp_path, manifest, lab_server
+):
+    a = adapter(tmp_path, manifest)
+    plan = a.plan([lab_server + "/vuln/echo?token=supersecretvalue&q=hello"])
+    records = a.execute(plan)
+    assert len(records) == 1
+    assert "supersecretvalue" not in records[0].url
+    assert "supersecretvalue" not in records[0].request_text
+    findings = a.normalize(records)
+    assert len(findings) == 1
+    assert findings[0].check_id == "html-injection"
+    assert findings[0].state == FindingState.VALIDATED
+    assert verify_reproduction(
+        findings[0].reproduction_detail, {record["id"]: record for record in a.store.exchanges()}
+    ).verified
+
+
 @pytest.mark.parametrize(
     "context",
     [
